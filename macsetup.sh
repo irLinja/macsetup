@@ -236,8 +236,17 @@ notification "Deactivate the System Integrity Protection with 'csrutil disable' 
 #
 # https://www.macbartender.com
 #
-brew install --cask bartender
-sudo -E tccutil -e com.surteesstudios.Bartender
+# brew install --cask bartender
+# sudo -E tccutil -e com.surteesstudios.Bartender
+
+#
+# Raycast
+#
+# macOS productivity tool, Alfred + Bartender
+#
+# https://raycast.app
+#
+brew install --cask raycast
 
 #
 # CommandQ
@@ -810,6 +819,12 @@ dockutil --add /Applications/Spotify.app --allhomes
 # brew install --cask visual-studio-code
 # dockutil --add /Applications/Visual\ Studio\ Code.app/ --allhomes
 
+#
+# Sublime Text
+#
+# https://www.sublimetext.com/
+#
+brew install --cask sublime-text
 
 ###################
 #                 #
@@ -923,6 +938,12 @@ pip install -U pytest
 #
 brew install ripgrep
 
+#
+# google-cloud-sdk - gcloud
+#
+# https://cloud.google.com/sdk/docs/install
+#
+brew install --cask google-cloud-sdk
 ######################
 #                    #
 # Command line tools #
