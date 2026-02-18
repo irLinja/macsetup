@@ -40,7 +40,9 @@
   # change — do NOT add killall Dock here.
   # NOTE: First-time dark mode auto-switch may require logout to take
   # full effect (macOS limitation, not a configuration defect).
-  system.activationScripts.postUserActivation.text = ''
+  # Runs as root (postUserActivation was removed); activateSettings -u
+  # works correctly from root context.
+  system.activationScripts.postActivation.text = ''
     /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
   '';
 }
