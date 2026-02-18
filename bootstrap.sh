@@ -2,6 +2,7 @@
 # bootstrap.sh - Take a bare Mac to a fully configured nix-darwin + Home Manager system
 #
 # Usage: ./bootstrap.sh
+#        MACSETUP_HOSTNAME=myhost MACSETUP_USERNAME=myuser ./bootstrap.sh
 #
 # Safe to re-run: detects existing Nix/nix-darwin installs and skips completed steps.
 # On failure: stops immediately with instructions to re-run.
@@ -69,8 +70,8 @@ echo "macsetup bootstrap"
 echo "=================="
 echo ""
 
-HOSTNAME=$(scutil --get LocalHostName 2>/dev/null || hostname -s)
-USERNAME=$(whoami)
+HOSTNAME="${MACSETUP_HOSTNAME:-$(scutil --get LocalHostName 2>/dev/null || hostname -s)}"
+USERNAME="${MACSETUP_USERNAME:-$(whoami)}"
 
 echo "  Hostname: $HOSTNAME"
 echo "  Username: $USERNAME"
@@ -84,6 +85,7 @@ fi
 
 read -p "Proceed with these settings? [Y/n] " -n 1 -r REPLY
 echo ""
+# Empty input (just Enter) means yes
 if [[ "$REPLY" =~ ^[Nn]$ ]]; then
   echo "Aborted. Edit the Nix configuration files to match your setup, then re-run."
   exit 0
