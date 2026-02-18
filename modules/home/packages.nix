@@ -1,6 +1,7 @@
 { pkgs, ... }: {
   home.packages = with pkgs; [
     # -- Development Languages & Runtimes --
+    nodejs            # Node.js runtime (required by pnpm)
     pnpm              # Fast Node.js package manager
     uv                # Fast Python package/project manager
 
