@@ -4,6 +4,7 @@
     ./shell.nix
     ./starship.nix
     ./git.nix
+    ./dotfiles.nix
   ];
 
   # Home Manager state version (latest stable).
