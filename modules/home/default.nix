@@ -2,6 +2,7 @@
   imports = [
     ./packages.nix
     ./shell.nix
+    ./starship.nix
     ./git.nix
   ];
 
