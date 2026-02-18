@@ -31,6 +31,13 @@
 
     historySubstringSearch.enable = true;
 
+    # ── oh-my-zsh ─────────────────────────────────────────────────
+    oh-my-zsh = {
+      enable = true;
+      plugins = [ "git" ];
+      # No theme -- Starship owns the prompt
+    };
+
     # ── Manual Plugins ───────────────────────────────────────────
     plugins = [
       {
