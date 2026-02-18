@@ -52,7 +52,7 @@ source_nix_profile() {
 
 handle_etc_conflicts() {
   # Move regular files (not symlinks) that conflict with nix-darwin management
-  local files=("/etc/nix/nix.conf" "/etc/bashrc" "/etc/zshrc")
+  local files=("/etc/nix/nix.conf" "/etc/bashrc" "/etc/zshrc" "/etc/zshenv")
   for f in "${files[@]}"; do
     if [ -f "$f" ] && [ ! -L "$f" ]; then
       info "Moving $f to ${f}.before-nix-darwin"
@@ -129,6 +129,9 @@ else
   info "Rebuilding with nix-darwin..."
   sudo darwin-rebuild switch --flake .#macsetup
 fi
+
+# After first bootstrap, darwin-rebuild is installed but not yet on PATH in this shell
+export PATH="/run/current-system/sw/bin:$PATH"
 
 # ---------------------------------------------------------------------------
 # Step 4: Verify idempotency (second rebuild)
