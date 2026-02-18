@@ -34,7 +34,16 @@
     # ── oh-my-zsh ─────────────────────────────────────────────────
     oh-my-zsh = {
       enable = true;
-      plugins = [ "git" ];
+      plugins = [
+        "git"
+        "kubectl"
+        "terraform"
+        "docker"
+        "copybuffer"
+        "sudo"
+        "extract"
+        "colored-man-pages"
+      ];
       # No theme -- Starship owns the prompt
     };
 
@@ -55,7 +64,7 @@
     shellAliases = {
       vi = "nvim";
       vim = "nvim";
-      k = "kubectl";
+
       ll = "ls -lah";
       l = "ls -lh";
       gpsdir = "ls -d ./*/ | xargs -P15 -I{} sh -c \"cd {} && git pull --all --tags --prune\"";
@@ -69,11 +78,6 @@
         if [[ -d /opt/homebrew/share/zsh/site-functions ]]; then
           fpath=(/opt/homebrew/share/zsh/site-functions $fpath)
         fi
-      '')
-
-      # Priority 600: After compinit -- kubectl alias completion
-      (lib.mkOrder 600 ''
-        compdef k=kubectl
       '')
 
       # Priority 600: After compinit -- completion waiting dots
@@ -100,22 +104,6 @@
         zstyle ':fzf-tab:complete:cd:*' fzf-preview 'ls --color=always $realpath'
         # fzf-tab: switch groups with , and .
         zstyle ':fzf-tab:*' switch-group ',' '.'
-      '')
-
-      # Priority 600: After compinit -- terraform completion
-      (lib.mkOrder 600 ''
-        if [[ -x /opt/homebrew/bin/terraform ]]; then
-          complete -o nospace -C /opt/homebrew/bin/terraform terraform
-        fi
-      '')
-
-      # Priority 1000: Copybuffer widget (Ctrl-O copies command line to clipboard)
-      (lib.mkOrder 1000 ''
-        copybuffer() {
-          printf "%s" "$BUFFER" | pbcopy
-        }
-        zle -N copybuffer
-        bindkey "^O" copybuffer
       '')
 
       # Priority 1000: TTS notification functions
