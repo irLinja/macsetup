@@ -1,0 +1,40 @@
+#!/bin/bash
+# macsetup - helper script for managing this nix-darwin configuration
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+FLAKE_REF="${SCRIPT_DIR}#macsetup"
+
+usage() {
+  echo "Usage: ./macsetup <command>"
+  echo ""
+  echo "Commands:"
+  echo "  bootstrap   First-time setup (install Nix + nix-darwin)"
+  echo "  switch      Apply current configuration"
+  echo "  update      Update flake inputs then apply"
+  echo "  build       Build without applying (dry run)"
+  echo "  check       Validate flake"
+  exit 1
+}
+
+case "${1:-}" in
+  bootstrap)
+    exec "${SCRIPT_DIR}/scripts/bootstrap.sh"
+    ;;
+  switch)
+    sudo darwin-rebuild switch --flake "$FLAKE_REF"
+    ;;
+  update)
+    nix flake update --flake "$SCRIPT_DIR"
+    sudo darwin-rebuild switch --flake "$FLAKE_REF"
+    ;;
+  build)
+    darwin-rebuild build --flake "$FLAKE_REF"
+    ;;
+  check)
+    nix flake check "${SCRIPT_DIR}"
+    ;;
+  *)
+    usage
+    ;;
+esac

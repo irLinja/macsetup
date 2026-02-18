@@ -9,25 +9,14 @@ Declarative macOS setup using Nix. Takes a fresh Mac from bare macOS to a fully 
 - **nixpkgs-unstable** — packages pinned via `flake.lock`
 - **Homebrew** (via nix-darwin) — declaratively managed for fast-moving CLI tools
 
-## Quick Start
-
-### Fresh Mac (nothing installed)
+## Usage
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/irLinja/macsetup/master/bootstrap.sh | bash
-```
-
-### Existing Setup
-
-```bash
-# Apply configuration
-sudo darwin-rebuild switch --flake .#macsetup
-
-# Update all dependencies
-nix flake update
-
-# Rebuild after update
-sudo darwin-rebuild switch --flake .#macsetup
+./macsetup bootstrap   # First-time setup (install Nix + nix-darwin)
+./macsetup switch      # Apply current configuration
+./macsetup update      # Update flake inputs then apply
+./macsetup build       # Build without applying (dry run)
+./macsetup check       # Validate flake
 ```
 
 ## Structure
@@ -42,7 +31,8 @@ modules/
     packages.nix       # Nix packages (stable CLI tools, GNU utils, dev tools)
 scripts/
   audit-packages.sh    # Scan current Mac and map tools to nixpkgs
-bootstrap.sh           # Bare Mac → first successful build
+  bootstrap.sh         # Bare Mac → first successful build
+macsetup               # CLI helper (wraps darwin-rebuild)
 ```
 
 ## Package Strategy
