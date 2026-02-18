@@ -5,12 +5,16 @@
     onActivation = {
       autoUpdate = true;
       upgrade = true;
-      cleanup = "zap";   # Remove anything not declared here
+      cleanup = "none";  # Don't remove undeclared packages until Phase 6 (GUI apps) declares everything
     };
 
     taps = [
       "peonping/tap"
       "tfversion/tap"
+    ];
+
+    casks = [
+      "1password"                 # Password manager (provides op-ssh-sign for git signing)
     ];
 
     brews = [
