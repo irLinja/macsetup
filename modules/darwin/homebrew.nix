@@ -21,6 +21,10 @@
       # -- Security --
       "1password"                   # Password manager (must be in /Applications for SSH agent)
 
+      # -- AI / Development --
+      "claude"                    # Claude Desktop
+      "claude-code"               # Claude Code CLI
+
       # -- Productivity --
       "microsoft-outlook"         # Microsoft Outlook email client
       "microsoft-teams"           # Microsoft Teams communication
