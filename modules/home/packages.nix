@@ -55,7 +55,7 @@
 
     # -- Security --
     shadowsocksx-ng     # ShadowsocksX-NG proxy
-    surfshark           # VPN client
+    # surfshark         # VPN client (shelved — SSL errors on corporate networks)
 
     # -- Utilities --
     transmission        # BitTorrent client
