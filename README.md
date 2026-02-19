@@ -15,7 +15,7 @@ bash scripts/bootstrap.sh
 **Existing Mac (capture current setup):**
 
 ```bash
-./scripts/macsetup capture
+./macsetup capture
 ```
 
 ## Daily Usage
@@ -41,9 +41,9 @@ hosts/
 modules/
   darwin/                   System-level: packages, defaults, services, security, fonts, homebrew
   home/                     User-level: shell, git, programs, dotfiles
+macsetup                   CLI wrapper (rebuild, update, rollback, etc.)
 scripts/
   bootstrap.sh             Bare Mac -> first successful build
-  macsetup                 CLI wrapper (this tool)
 ```
 
 **Responsibility boundary:**
