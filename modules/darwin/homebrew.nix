@@ -39,7 +39,6 @@
 
       # -- Utilities --
       "ledger-wallet"             # Ledger hardware wallet manager
-      "tailscale-app"             # Tailscale mesh VPN
     ];
 
     masApps = {
