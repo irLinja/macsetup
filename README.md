@@ -9,7 +9,7 @@ Declarative macOS setup with Nix. One command to go from bare Mac to fully confi
 ```bash
 git clone git@github.com:irLinja/macsetup.git ~/macsetup
 cd ~/macsetup
-bash scripts/bootstrap.sh
+./macsetup bootstrap
 ```
 
 **Existing Mac (capture current setup):**
@@ -22,6 +22,7 @@ bash scripts/bootstrap.sh
 
 | Command | Description |
 |---------|-------------|
+| `macsetup bootstrap` | First-time setup (install Nix + nix-darwin) |
 | `macsetup rebuild` | Apply configuration changes |
 | `macsetup update` | Update all Nix inputs and rebuild |
 | `macsetup list` | Show generation history |
@@ -101,7 +102,7 @@ sudo darwin-rebuild --switch-generation N        # Switch generation
 
 - macOS (Apple Silicon)
 - Internet connection
-- Nix is installed automatically by `bootstrap.sh`
+- Nix is installed automatically by `macsetup bootstrap`
 
 ## License
 

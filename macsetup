@@ -52,6 +52,7 @@ macsetup -- declarative macOS setup with Nix
 Usage: macsetup <command> [args]
 
 Commands:
+  bootstrap     First-time setup (install Nix + nix-darwin)
   rebuild       Apply configuration changes (darwin-rebuild switch)
   update        Update all Nix inputs and rebuild
   rollback      Revert to the previous generation
@@ -70,6 +71,16 @@ EOF
 # ---------------------------------------------------------------------------
 # Subcommands
 # ---------------------------------------------------------------------------
+
+cmd_bootstrap() {
+  if command -v darwin-rebuild &>/dev/null; then
+    error "This Mac has already been bootstrapped (darwin-rebuild found). Use 'macsetup rebuild' instead."
+  fi
+  if [ ! -f "$REPO_ROOT/scripts/bootstrap.sh" ]; then
+    error "bootstrap.sh not found at $REPO_ROOT/scripts/bootstrap.sh"
+  fi
+  exec "$REPO_ROOT/scripts/bootstrap.sh"
+}
 
 cmd_rebuild() {
   info "Rebuilding system configuration..."
@@ -112,6 +123,9 @@ cmd_list() {
 }
 
 cmd_capture() {
+  if ! command -v darwin-rebuild &>/dev/null; then
+    error "This Mac has not been bootstrapped yet. Run 'macsetup bootstrap' first."
+  fi
   if [ ! -f "$REPO_ROOT/scripts/capture.sh" ]; then
     error "capture.sh not found at $REPO_ROOT/scripts/capture.sh"
   fi
@@ -128,6 +142,9 @@ if [ $# -eq 0 ]; then
 fi
 
 case "$1" in
+  bootstrap)
+    cmd_bootstrap
+    ;;
   rebuild)
     cmd_rebuild
     ;;
