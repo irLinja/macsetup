@@ -22,6 +22,24 @@
 
     nix-homebrew.url = "github:zhaofengli/nix-homebrew";
 
+    # Homebrew tap sources (required for mutableTaps = false)
+    homebrew-core = {
+      url = "github:homebrew/homebrew-core";
+      flake = false;
+    };
+    homebrew-cask = {
+      url = "github:homebrew/homebrew-cask";
+      flake = false;
+    };
+    homebrew-peonping = {
+      url = "github:PeonPing/homebrew-tap";
+      flake = false;
+    };
+    homebrew-tfversion = {
+      url = "github:tfversion/homebrew-tap";
+      flake = false;
+    };
+
     mac-app-util.url = "github:hraban/mac-app-util";
 
   };

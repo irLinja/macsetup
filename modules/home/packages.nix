@@ -6,16 +6,13 @@
     uv                # Fast Python package/project manager
 
     # -- CLI Utilities --
-    direnv            # Directory-based env vars
     jq                # JSON processor
     ripgrep           # Fast regex search (rg)
-    starship          # Cross-shell prompt
     terminal-notifier # macOS notification CLI
     zsh-completions   # Additional zsh completion definitions
 
     # -- Version Control --
     gh                # GitHub CLI
-    git               # Distributed version control
     pre-commit        # Git hook framework
 
     # -- Networking --
@@ -36,9 +33,7 @@
     # aria2             # Multi-protocol parallel downloader
     # mtr               # Network diagnostic (traceroute + ping)
     # openconnect       # VPN client (Cisco/Juniper/etc.)
-  ]) ++ [
-    inputs.nix-casks.packages.${pkgs.system}."1password"  # Password manager
-  ] ++ (with inputs.nix-casks.packages.${pkgs.system}; [
+  ]) ++ (with inputs.nix-casks.packages.${pkgs.system}; [
     # -- Development --
     ghostty             # GPU-accelerated terminal emulator
     headlamp            # Kubernetes web UI

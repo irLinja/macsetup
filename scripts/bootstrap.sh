@@ -12,6 +12,7 @@ set -euo pipefail
 trap 'echo ""; echo "Bootstrap failed at step above."; echo "Fix the issue, then re-run: ./bootstrap.sh"; echo ""' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -78,8 +79,20 @@ echo "  Username: $USERNAME"
 echo ""
 
 if [ "$USERNAME" != "arash" ]; then
-  echo "  WARNING: Nix config is hardcoded for username 'arash'."
-  echo "  You will need to edit hosts/shared.nix and flake.nix to match your username."
+  info "Updating Nix config: replacing 'arash' with '$USERNAME'..."
+  # Replace quoted string values (name, primaryUser, nix-homebrew user)
+  sed -i '' "s|\"arash\"|\"$USERNAME\"|g" "$REPO_DIR/hosts/shared.nix"
+  # Replace home directory path
+  sed -i '' "s|/Users/arash|/Users/$USERNAME|g" "$REPO_DIR/hosts/shared.nix"
+  # Replace Nix attribute paths — quote username if it contains dots
+  if [[ "$USERNAME" == *.* ]]; then
+    sed -i '' "s|\.users\.arash |.users.\"$USERNAME\" |g" "$REPO_DIR/hosts/shared.nix"
+  else
+    sed -i '' "s|\.users\.arash |.users.$USERNAME |g" "$REPO_DIR/hosts/shared.nix"
+  fi
+  # Stage the modified file so the flake sees it (flakes ignore unstaged changes)
+  git -C "$REPO_DIR" add hosts/shared.nix
+  info "Updated hosts/shared.nix for user '$USERNAME'"
   echo ""
 fi
 
@@ -117,7 +130,7 @@ info "Nix is available: $(nix --version)"
 # Step 3: Bootstrap or rebuild nix-darwin
 # ---------------------------------------------------------------------------
 
-cd "$SCRIPT_DIR"
+cd "$REPO_DIR"
 
 if ! check_darwin_installed; then
   # First time: handle /etc conflicts before initial nix-darwin activation

@@ -52,6 +52,25 @@ Always set `home-manager.useGlobalPkgs = true` and `home-manager.useUserPackages
 - `nix.enable = false` when using Determinate Systems installer
 - `programs.zsh.enable = true` in BOTH nix-darwin and Home Manager
 
+## Homebrew Enforcement
+
+- `cleanup = "zap"` in `modules/darwin/homebrew.nix` — any Homebrew formulae, casks, or mas apps NOT declared in config are **removed** on every `darwin-rebuild switch`
+- `mutableTaps = false` in `hosts/shared.nix` — undeclared taps are also removed
+- Always add new Homebrew packages to the config **before** running rebuild, or they will be uninstalled
+
+### nix-homebrew Tap Rules
+
+- All taps require flake inputs in `flake.nix` with `flake = false` (homebrew-core, homebrew-cask, plus custom taps)
+- Tap keys in `nix-homebrew.taps` use GitHub repo name format: `"peonping/homebrew-tap"` (not short `"peonping/tap"`)
+- **Custom taps** (peonping, tfversion) must NOT appear in `homebrew.taps` — Homebrew will try to `git clone` over nix-managed symlinks
+- **Standard taps** (`homebrew/homebrew-core`, `homebrew/homebrew-cask`) MUST be in `homebrew.taps` — otherwise `cleanup = "zap"` tries to untap them
+
+## 1Password
+
+- Must be installed via **Homebrew cask** (not NixCasks) — requires `/Applications/` for SSH agent and browser integration
+- Git SSH signing path: `/Applications/1Password.app/Contents/MacOS/op-ssh-sign` (in `modules/home/git.nix`)
+- NixCasks installs to `~/Applications/Home Manager Apps/` which 1Password rejects
+
 ## Pitfalls
 
 - Flakes silently ignore files not tracked by git -- always `git add` new .nix files before rebuild
@@ -59,6 +78,8 @@ Always set `home-manager.useGlobalPkgs = true` and `home-manager.useUserPackages
 - macOS defaults need `activateSettings -u` + `killall Dock/Finder` in post-activation script
 - NixCasks only supports .dmg/.zip (not .pkg installers)
 - mas requires user to be signed into App Store (not fully unattended)
+- Old `~/.gitconfig` overrides Home Manager's `~/.config/git/config` -- remove it if Home Manager manages git
+- `darwin-rebuild switch --flake .` uses hostname as config name -- use `--flake .#macsetup` explicitly
 
 ## Repository
 

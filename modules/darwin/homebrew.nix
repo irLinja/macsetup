@@ -5,15 +5,22 @@
     onActivation = {
       autoUpdate = true;
       upgrade = true;
-      cleanup = "none";  # Switch to "zap" after verifying all desired apps are declared
+      cleanup = "zap";  # Removes any formulae/casks/mas apps not declared in config
     };
 
+    # Tap sources are managed by nix-homebrew (hosts/shared.nix).
+    # Declare them here so cleanup = "zap" doesn't try to untap them.
+    # Custom taps (peonping, tfversion) are omitted — Homebrew finds them
+    # via nix-homebrew symlinks without needing an explicit tap entry.
     taps = [
-      "peonping/tap"
-      "tfversion/tap"
+      "homebrew/homebrew-core"
+      "homebrew/homebrew-cask"
     ];
 
     casks = [
+      # -- Security --
+      "1password"                   # Password manager (must be in /Applications for SSH agent)
+
       # -- Productivity --
       "microsoft-outlook"         # Microsoft Outlook email client
       "microsoft-teams"           # Microsoft Teams communication
