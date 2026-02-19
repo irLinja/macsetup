@@ -61,8 +61,9 @@
     '';
 
     "Library/Application Support/com.mitchellh.ghostty/config".text = ''
-      font-size = 14
-      theme = dark:GruvboxDarkHard,light:GruvboxLight
+      font-size = 16
+      theme = Elegant
+      background-opacity = 0.85
       window-padding-x = 4
       window-padding-y = 4
       confirm-close-surface = false
