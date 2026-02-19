@@ -75,15 +75,11 @@
   };
 
   # ── Post-activation ────────────────────────────────────────────────
-  # activateSettings makes NSGlobalDomain changes (dark mode, keyboard
-  # repeat rates) take effect without logout.
-  # Dock restart is handled automatically by nix-darwin when dock settings
-  # change — do NOT add killall Dock here.
-  # NOTE: First-time dark mode auto-switch may require logout to take
-  # full effect (macOS limitation, not a configuration defect).
-  # Runs as root (postUserActivation was removed); activateSettings -u
-  # works correctly from root context.
+  # Runs after all activation steps (including Homebrew cask installs).
+  # killall Dock refreshes icons so persistent-apps resolve correctly
+  # even on first run when casks are installed during this same switch.
   system.activationScripts.postActivation.text = ''
     /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
+    killall Dock 2>/dev/null || true
   '';
 }
