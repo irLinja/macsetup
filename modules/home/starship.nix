@@ -16,9 +16,10 @@
       gcloud = {
         disabled = true;
       };
-      
+
       golang = {
-        symbol = "";
+        symbol = "";
       };
+    };
   };
 }
