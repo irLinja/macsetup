@@ -59,5 +59,13 @@
     ".npmrc".text = ''
       registry=https://registry.npmjs.org/
     '';
+
+    "Library/Application Support/com.mitchellh.ghostty/config".text = ''
+      font-size = 14
+      theme = dark:GruvboxDarkHard,light:GruvboxLight
+      window-padding-x = 4
+      window-padding-y = 4
+      confirm-close-surface = false
+    '';
   };
 }

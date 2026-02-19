@@ -73,6 +73,13 @@
     # ── initContent (priority-ordered shell snippets) ────────────
     initContent = lib.mkMerge [
 
+      # Priority 500: Use local starship config override if it exists
+      (lib.mkOrder 500 ''
+        if [[ -f "$HOME/.config/starship-local.toml" ]]; then
+          export STARSHIP_CONFIG="$HOME/.config/starship-local.toml"
+        fi
+      '')
+
       # Priority 550: Add Homebrew completions to fpath before compinit (570)
       (lib.mkOrder 550 ''
         if [[ -d /opt/homebrew/share/zsh/site-functions ]]; then
