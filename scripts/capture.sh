@@ -192,32 +192,6 @@ add_homebrew_brew() {
   insert_before_line "$target" "$insert_at" "      \"${brew_name}\"${comment_suffix}"
 }
 
-# Add a NixCasks package to modules/home/packages.nix
-add_nixcask() {
-  local pname="$1"
-  local comment="${2:-}"
-  local target="$REPO_ROOT/modules/home/packages.nix"
-
-  local comment_suffix=""
-  if [[ -n "$comment" ]]; then
-    comment_suffix="            # $comment"
-  fi
-
-  # Find the closing ]); of the NixCasks block (the last one after 'with inputs.nix-casks')
-  local block_start block_end insert_at
-  block_start=$(grep -n 'with inputs.nix-casks' "$target" | tail -1 | cut -d: -f1)
-
-  if [[ -z "$block_start" ]]; then
-    warn "Could not find NixCasks block in $target"
-    return
-  fi
-
-  block_end=$(tail -n +"$block_start" "$target" | grep -n '^\s*\]);' | head -1 | cut -d: -f1)
-  insert_at=$((block_start + block_end - 1))
-
-  insert_before_line "$target" "$insert_at" "    ${pname}${comment_suffix}"
-}
-
 # Add a Homebrew cask to modules/darwin/homebrew.nix
 add_homebrew_cask() {
   local cask_name="$1"
@@ -340,13 +314,6 @@ extract_managed_nixpkgs() {
     | sed 's/[[:space:]]*#.*//'
 }
 
-extract_managed_nixcasks() {
-  awk '/with inputs.nix-casks/,/\]\);/' "$REPO_ROOT/modules/home/packages.nix" \
-    | grep -E '^\s{4}[a-z]' \
-    | sed 's/^[[:space:]]*//' \
-    | sed 's/[[:space:]]*#.*//'
-}
-
 extract_managed_brews() {
   awk '/brews = \[/,/\];/' "$REPO_ROOT/modules/darwin/homebrew.nix" \
     | grep -E '^\s+"' \
@@ -440,78 +407,13 @@ resolve_nix_name() {
 }
 
 ###############################################################################
-# NixCasks name resolution
+# App name to Homebrew cask name mapping
 ###############################################################################
 
-# App display name to NixCasks pname mapping
-declare -A APP_TO_PNAME=(
-  ["1Password"]="1password"
-  ["AnyConnect"]="cisco-anyconnect"
-  ["Arc"]="arc"
-  ["Audacity"]="audacity"
-  ["BetterDisplay"]="betterdisplay"
-  ["ChatGPT"]="chatgpt"
-  ["Claude"]="claude"
-  ["Cursor"]="cursor"
-  ["DBeaver"]="dbeaver-community"
-  ["DisplayLink Manager"]="displaylink"
-  ["Figma"]="figma"
-  ["Ghostty"]="ghostty"
-  ["GitHub Desktop"]="github"
-  ["Google Chrome"]="google-chrome"
-  ["Grammarly Desktop"]="grammarly-desktop"
-  ["Headlamp"]="headlamp"
-  ["IINA"]="iina"
-  ["JetBrains Toolbox"]="jetbrains-toolbox"
-  ["LM Studio"]="lm-studio"
-  ["Ledger Live"]="ledger-live"
-  ["Logi Tune"]="logi-tune"
-  ["Microsoft Excel"]="microsoft-excel"
-  ["Microsoft Outlook"]="microsoft-outlook"
-  ["Microsoft PowerPoint"]="microsoft-powerpoint"
-  ["Microsoft Teams"]="microsoft-teams"
-  ["Microsoft Word"]="microsoft-word"
-  ["Miro"]="miro"
-  ["MongoDB Compass"]="mongodb-compass"
-  ["MonitorControl"]="monitorcontrol"
-  ["Multipass"]="multipass"
-  ["Notion"]="notion"
-  ["OpenVPN Connect"]="openvpn-connect"
-  ["Rancher Desktop"]="rancher"
-  ["Raycast"]="raycast"
-  ["ShadowsocksX-NG"]="shadowsocksx-ng"
-  ["Slack"]="slack"
-  ["Spotify"]="spotify"
-  ["Steam"]="steam"
-  ["Stremio"]="stremio"
-  ["Surfshark"]="surfshark"
-  ["Tailscale"]="tailscale"
-  ["Telegram"]="telegram"
-  ["The Unarchiver"]="the-unarchiver"
-  ["Transmission"]="transmission"
-  ["Visual Studio Code"]="visual-studio-code"
-  ["WhatsApp"]="whatsapp"
-  ["WireGuard"]="wireguard-tools"
-  ["YubiKey Manager"]="yubico-yubikey-manager"
-  ["Zen"]="zen"
-)
-
-# Derive pname from app display name (lowercase, spaces to hyphens)
-derive_pname() {
+# Derive cask name from app display name (lowercase, spaces to hyphens)
+derive_cask_name() {
   local app_name="$1"
-  if [[ -v "APP_TO_PNAME[$app_name]" ]]; then
-    echo "${APP_TO_PNAME[$app_name]}"
-    return
-  fi
   echo "$app_name" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-'
-}
-
-# Check NixCasks API for a package
-check_nixcasks() {
-  local pname="$1"
-  local response
-  response=$(curl -sf "https://nix-casks.yorganci.dev/api/package/$pname" 2>/dev/null) || return 1
-  echo "$response" | jq -r '.pname' 2>/dev/null
 }
 
 ###############################################################################
@@ -751,9 +653,6 @@ audit_gui_apps() {
   info "Found ${#gui_apps[@]} third-party apps."
 
   # Load managed GUI apps
-  local managed_nixcasks=()
-  mapfile -t managed_nixcasks < <(extract_managed_nixcasks)
-
   local managed_casks=()
   mapfile -t managed_casks < <(extract_managed_casks)
 
@@ -763,9 +662,6 @@ audit_gui_apps() {
   # Build lookup sets
   declare -A managed_gui_set
 
-  for item in "${managed_nixcasks[@]}"; do
-    managed_gui_set["$item"]=1
-  done
   for item in "${managed_casks[@]}"; do
     managed_gui_set["$item"]=1
   done
@@ -780,11 +676,11 @@ audit_gui_apps() {
   for app_name in "${gui_apps[@]}"; do
     [[ -z "$app_name" ]] && continue
 
-    local pname
-    pname=$(derive_pname "$app_name")
+    local cask_name
+    cask_name=$(derive_cask_name "$app_name")
 
-    # Check if managed under pname, cask name, or display name
-    if [[ -v "managed_gui_set[$pname]" ]] || [[ -v "managed_gui_set[$app_name]" ]]; then
+    # Check if managed under cask name or display name
+    if [[ -v "managed_gui_set[$cask_name]" ]] || [[ -v "managed_gui_set[$app_name]" ]]; then
       continue
     fi
 
@@ -798,37 +694,23 @@ audit_gui_apps() {
 
   info "Found ${#unmanaged[@]} unmanaged GUI apps."
 
-  local has_jq=false
-  if command -v jq &>/dev/null; then
-    has_jq=true
-  else
-    warn "jq not installed -- NixCasks API lookups will be skipped."
+  if ! command -v brew &>/dev/null; then
+    warn "Homebrew not installed -- cannot look up cask availability. Skipping GUI triage."
+    return
   fi
 
   for app_name in "${unmanaged[@]}"; do
-    local pname
-    pname=$(derive_pname "$app_name")
+    local cask_name
+    cask_name=$(derive_cask_name "$app_name")
 
-    # Try NixCasks API
-    local nixcasks_pname=""
-    if [[ "$has_jq" == true ]]; then
-      nixcasks_pname=$(check_nixcasks "$pname" 2>/dev/null || echo "")
-    fi
+    # Check if Homebrew cask exists
+    local brew_cask_ver=""
+    brew_cask_ver=$(brew info --cask "$cask_name" --json=v2 2>/dev/null | jq -r '.casks[0].version // empty' 2>/dev/null || echo "")
 
-    if [[ -n "$nixcasks_pname" ]]; then
-      triage "gui:$app_name" "$app_name (NixCasks: $nixcasks_pname)" add_nixcask "$nixcasks_pname" "$app_name"
-    elif command -v brew &>/dev/null; then
-      # Check if Homebrew cask exists
-      local brew_cask_ver=""
-      brew_cask_ver=$(brew info --cask "$pname" --json=v2 2>/dev/null | jq -r '.casks[0].version // empty' 2>/dev/null || echo "")
-
-      if [[ -n "$brew_cask_ver" ]]; then
-        triage "gui:$app_name" "$app_name (Homebrew cask: $pname)" add_homebrew_cask "$pname" "$app_name"
-      else
-        warn "$app_name -- not found in NixCasks or Homebrew cask. Skipping."
-      fi
+    if [[ -n "$brew_cask_ver" ]]; then
+      triage "gui:$app_name" "$app_name (Homebrew cask: $cask_name)" add_homebrew_cask "$cask_name" "$app_name"
     else
-      warn "$app_name -- cannot check Homebrew (not installed). Skipping."
+      warn "$app_name -- not found as Homebrew cask. Skipping."
     fi
   done
 }
