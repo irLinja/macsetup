@@ -24,18 +24,9 @@
 
     mac-app-util.url = "github:hraban/mac-app-util";
 
-    # Declarative Homebrew taps (required by nix-homebrew when mutableTaps = false)
-    homebrew-core = {
-      url = "github:homebrew/homebrew-core";
-      flake = false;
-    };
-    homebrew-cask = {
-      url = "github:homebrew/homebrew-cask";
-      flake = false;
-    };
   };
 
-  outputs = inputs@{ self, nixpkgs, nix-darwin, home-manager, nix-casks, nix-homebrew, mac-app-util, homebrew-core, homebrew-cask }: {
+  outputs = inputs@{ self, nixpkgs, nix-darwin, home-manager, nix-casks, nix-homebrew, mac-app-util, ... }: {
     darwinConfigurations.macsetup = nix-darwin.lib.darwinSystem {
       specialArgs = { inherit inputs; };
       modules = [

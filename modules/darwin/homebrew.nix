@@ -24,11 +24,11 @@
 
       # -- Security --
       "openvpn-connect"           # OpenVPN client
-      "yubico-yubikey-manager"    # YubiKey management
+      "yubico-authenticator"      # YubiKey Authenticator (replaces discontinued YubiKey Manager)
 
       # -- Utilities --
-      "ledger-live"               # Ledger hardware wallet manager
-      "tailscale"                 # Tailscale mesh VPN
+      "ledger-wallet"             # Ledger hardware wallet manager
+      "tailscale-app"             # Tailscale mesh VPN
     ];
 
     masApps = {
@@ -69,9 +69,6 @@
       # -- Tap Packages --
       "peonping/tap/peon-ping"    # Sound effects and desktop notifications for AI coding agents
       "tfversion/tap/tfversion"   # Manage Terraform versions
-
-      # -- Other --
-      "z"                         # Directory jump tool (frecency-based)
 
       # -- Shelved (uncomment to enable) --
       # "bicep"                   # Bicep template language for Azure

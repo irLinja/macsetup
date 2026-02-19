@@ -22,10 +22,6 @@
     enableRosetta = false;          # Apple Silicon only, no x86_64 emulation needed
     user = "arash";                 # Must match system.primaryUser
     autoMigrate = true;             # Migrate existing /opt/homebrew to managed state
-    mutableTaps = false;            # Declarative taps only
-    taps = {
-      "homebrew/homebrew-core" = inputs.homebrew-core;
-      "homebrew/homebrew-cask" = inputs.homebrew-cask;
-    };
+    mutableTaps = true;             # Allow existing taps (autoMigrate conflicts with false)
   };
 }
