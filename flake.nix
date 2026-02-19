@@ -14,11 +14,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Phase 6: GUI application channels
-    nix-casks = {
-      url = "github:atahanyorganci/nix-casks/archive";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # -- Archived inputs (Phase 8: migrated GUI apps to Homebrew cask) --
+    # nix-casks = {
+    #   url = "github:atahanyorganci/nix-casks/archive";
+    #   inputs.nixpkgs.follows = "nixpkgs";
+    # };
 
     nix-homebrew.url = "github:zhaofengli/nix-homebrew";
 
@@ -40,24 +40,17 @@
       flake = false;
     };
 
-    mac-app-util.url = "github:hraban/mac-app-util";
+    # mac-app-util.url = "github:hraban/mac-app-util";
 
   };
 
-  outputs = inputs@{ self, nixpkgs, nix-darwin, home-manager, nix-casks, nix-homebrew, mac-app-util, ... }: {
+  outputs = inputs@{ self, nixpkgs, nix-darwin, home-manager, nix-homebrew, ... }: {
     darwinConfigurations.macsetup = nix-darwin.lib.darwinSystem {
       specialArgs = { inherit inputs; };
       modules = [
         ./hosts/shared.nix
         home-manager.darwinModules.default
         nix-homebrew.darwinModules.nix-homebrew
-        mac-app-util.darwinModules.default
-        {
-          # mac-app-util for Home Manager (Spotlight integration for NixCasks apps)
-          home-manager.sharedModules = [
-            mac-app-util.homeManagerModules.default
-          ];
-        }
       ];
     };
   };
