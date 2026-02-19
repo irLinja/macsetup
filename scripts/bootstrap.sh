@@ -82,8 +82,8 @@ if [ "$USERNAME" != "arash" ]; then
   info "Updating Nix config: replacing 'arash' with '$USERNAME'..."
   # Replace quoted string values (name, primaryUser, nix-homebrew user)
   sed -i '' "s|\"arash\"|\"$USERNAME\"|g" "$REPO_DIR/hosts/shared.nix"
-  # Replace home directory path
-  sed -i '' "s|/Users/arash|/Users/$USERNAME|g" "$REPO_DIR/hosts/shared.nix"
+  # Replace home directory path (anchor with trailing quote to avoid re-run substring match)
+  sed -i '' "s|/Users/arash\"|/Users/$USERNAME\"|g" "$REPO_DIR/hosts/shared.nix"
   # Replace Nix attribute paths — quote username if it contains dots
   if [[ "$USERNAME" == *.* ]]; then
     sed -i '' "s|\.users\.arash |.users.\"$USERNAME\" |g" "$REPO_DIR/hosts/shared.nix"
