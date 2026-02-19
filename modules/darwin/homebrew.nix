@@ -58,7 +58,6 @@
       "kubelogin"                 # Azure K8s credential plugin
       "checkov"                   # IaC static analysis / security scanner
       "terraform"                 # Infrastructure as Code
-      "vault"                     # HashiCorp Vault secret management
       "terraform-docs"            # Terraform documentation generator
       "terraform-mcp-server"      # MCP server for Terraform
       "tflint"                    # Terraform linter
