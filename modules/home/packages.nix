@@ -1,5 +1,5 @@
-{ pkgs, ... }: {
-  home.packages = with pkgs; [
+{ pkgs, inputs, ... }: {
+  home.packages = (with pkgs; [
     # -- Development Languages & Runtimes --
     nodejs            # Node.js runtime (required by pnpm)
     pnpm              # Fast Node.js package manager
@@ -36,5 +36,43 @@
     # aria2             # Multi-protocol parallel downloader
     # mtr               # Network diagnostic (traceroute + ping)
     # openconnect       # VPN client (Cisco/Juniper/etc.)
-  ];
+  ]) ++ [
+    inputs.nix-casks.packages.${pkgs.system}."1password"  # Password manager
+  ] ++ (with inputs.nix-casks.packages.${pkgs.system}; [
+    # -- Development --
+    ghostty             # GPU-accelerated terminal emulator
+    headlamp            # Kubernetes web UI
+    rancher             # Rancher Desktop (container management)
+    visual-studio-code  # Code editor
+
+    # -- Productivity --
+    grammarly-desktop   # Writing assistant
+    notion              # Notes and wiki
+    raycast             # Spotlight replacement / launcher
+
+    # -- Media --
+    iina                # Media player
+
+    # -- Communication --
+    slack               # Team messaging
+    telegram            # Messaging
+    whatsapp            # Messaging
+
+    # -- Security --
+    shadowsocksx-ng     # ShadowsocksX-NG proxy
+    surfshark           # VPN client
+
+    # -- Utilities --
+    transmission        # BitTorrent client
+    # betterdisplay     # Display management (shelved)
+    # monitorcontrol    # Monitor brightness/volume control (shelved)
+
+    # -- Internet --
+    arc                 # Arc browser
+    # zen               # Zen browser (shelved)
+
+    # -- Creative --
+    chatgpt             # ChatGPT desktop app
+    claude              # Claude desktop app
+  ]);
 }

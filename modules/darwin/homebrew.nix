@@ -5,7 +5,7 @@
     onActivation = {
       autoUpdate = true;
       upgrade = true;
-      cleanup = "none";  # Don't remove undeclared packages until Phase 6 (GUI apps) declares everything
+      cleanup = "none";  # Switch to "zap" after verifying all desired apps are declared
     };
 
     taps = [
@@ -14,8 +14,34 @@
     ];
 
     casks = [
-      "1password"                 # Password manager (provides op-ssh-sign for git signing)
+      # -- Productivity --
+      "microsoft-outlook"         # Microsoft Outlook email client
+      "microsoft-teams"           # Microsoft Teams communication
+      "miro"                      # Miro collaborative whiteboard
+
+      # -- Media --
+      "spotify"                   # Music streaming
+
+      # -- Security --
+      "openvpn-connect"           # OpenVPN client
+      "yubico-yubikey-manager"    # YubiKey management
+
+      # -- Utilities --
+      "ledger-live"               # Ledger hardware wallet manager
+      "tailscale"                 # Tailscale mesh VPN
     ];
+
+    masApps = {
+      # -- Productivity --
+      "Amphetamine" = 937984704;
+
+      # -- Security --
+      "1Password for Safari" = 1569813296;
+      "WireGuard" = 1451685025;
+
+      # -- Utilities --
+      "The Unarchiver" = 425424353;
+    };
 
     brews = [
       # -- Cloud & Infrastructure --
