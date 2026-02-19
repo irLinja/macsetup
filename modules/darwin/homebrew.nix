@@ -18,27 +18,52 @@
     ];
 
     casks = [
-      # -- Security --
-      "1password"                   # Password manager (must be in /Applications for SSH agent)
-
       # -- AI / Development --
-      "claude"                    # Claude Desktop
-      "claude-code"               # Claude Code CLI
+      "chatgpt"                     # ChatGPT desktop app
+      "claude"                      # Claude Desktop
+      "claude-code"                 # Claude Code CLI
+
+      # -- Development --
+      "ghostty"                     # GPU-accelerated terminal emulator
+      "headlamp"                    # Kubernetes web UI
+      "rancher"                     # Rancher Desktop (container management)
+      "visual-studio-code"          # Code editor
 
       # -- Productivity --
-      "microsoft-outlook"         # Microsoft Outlook email client
-      "microsoft-teams"           # Microsoft Teams communication
-      "miro"                      # Miro collaborative whiteboard
+      "grammarly-desktop"           # Writing assistant
+      "microsoft-outlook"           # Microsoft Outlook email client
+      "microsoft-teams"             # Microsoft Teams communication
+      "miro"                        # Miro collaborative whiteboard
+      "notion"                      # Notes and wiki
+      "raycast"                     # Spotlight replacement / launcher
+
+      # -- Communication --
+      "slack"                       # Team messaging
+      "telegram"                    # Messaging
+      "whatsapp"                    # Messaging
 
       # -- Media --
-      "spotify"                   # Music streaming
+      "iina"                        # Media player
+      "spotify"                     # Music streaming
 
       # -- Security --
-      "openvpn-connect"           # OpenVPN client
-      "yubico-authenticator"      # YubiKey Authenticator (replaces discontinued YubiKey Manager)
+      "1password"                   # Password manager (must be in /Applications for SSH agent)
+      "openvpn-connect"             # OpenVPN client
+      "shadowsocksx-ng"             # ShadowsocksX-NG proxy
+      "yubico-authenticator"        # YubiKey Authenticator
+
+      # -- Internet --
+      "arc"                         # Arc browser
 
       # -- Utilities --
-      "ledger-wallet"             # Ledger hardware wallet manager
+      "ledger-wallet"               # Ledger hardware wallet manager
+      "transmission"                # BitTorrent client
+
+      # -- Shelved (uncomment to enable) --
+      # "betterdisplay"             # Display management
+      # "monitorcontrol"            # Monitor brightness/volume control
+      # "surfshark"                 # VPN client (SSL errors on corporate networks)
+      # "zen"                       # Zen browser
     ];
 
     masApps = {
