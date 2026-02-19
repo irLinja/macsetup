@@ -1,8 +1,4 @@
-{ config, ... }:
-let
-  user = config.system.primaryUser;
-  hmApps = "/Users/${user}/Applications/Home Manager Apps";
-in {
+{ ... }: {
   # ── Dock ───────────────────────────────────────────────────────────
   # Only settings that differ from stock macOS defaults.
   # Omitted: position, magnification, minimize-effect,
@@ -14,13 +10,13 @@ in {
     show-recents = false;           # stock: true — prevent transient apps in Dock
     persistent-apps = [
       "/System/Applications/Messages.app"
-      "${hmApps}/Arc.app"
+      "/Applications/Arc.app"
       "/System/Applications/Mail.app"
-      "${hmApps}/Telegram.app"
-      "${hmApps}/Notion.app"
+      "/Applications/Telegram.app"
+      "/Applications/Notion.app"
       "/System/Applications/Calendar.app"
-      "${hmApps}/Slack.app"
-      "${hmApps}/Ghostty.app"
+      "/Applications/Slack.app"
+      "/Applications/Ghostty.app"
       "/Applications/Spotify.app"
       "/System/Applications/iPhone Mirroring.app"
     ];
