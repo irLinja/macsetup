@@ -27,13 +27,7 @@
     KeyRepeat = 5;              # stock: 6 (lower = faster)
     InitialKeyRepeat = 20;      # stock: 25 (higher = longer delay before repeat)
 
-    # ── Language & Region ─────────────────────────────────────────
-    AppleLanguages = [ "en-US" "fa-US" ];
-    AppleLocale = "en_US";
-    AppleMeasurementUnits = "Centimeters";
-    AppleMetricSystem = true;
-    AppleTemperatureUnit = "Celsius";
-    AppleICUForce24HourTime = false;
+    AppleMetricUnits = 1;
 
     # ── Appearance ─────────────────────────────────────────────────
     # Automatic light/dark switching based on time of day ("Auto" mode).
@@ -45,6 +39,12 @@
 
   # ── Language & Region (extended) ─────────────────────────────────
   system.defaults.CustomUserPreferences.".GlobalPreferences" = {
+    AppleLanguages = [ "en-US" "fa-US" ];
+    AppleLocale = "en_US";
+    AppleMeasurementUnits = "Centimeters";
+    AppleMetricSystem = true;
+    AppleTemperatureUnit = "Celsius";
+    AppleICUForce24HourTime = false;
     AppleFirstWeekday = { gregorian = 2; };   # Monday
     AppleICUDateFormatStrings = { "1" = "d/M/yy"; };  # short date: 20/2/26
   };
@@ -115,5 +115,12 @@
   system.activationScripts.postActivation.text = ''
     /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
     killall Dock 2>/dev/null || true
+
+    # Clean up dangling symlinks in Homebrew's zsh completions directory
+    # (stale _brew, _brew_cask, or formula leftovers cause compinit errors)
+    if [[ -d /opt/homebrew/share/zsh/site-functions ]]; then
+      find /opt/homebrew/share/zsh/site-functions -maxdepth 1 -type l ! -exec test -e {} \; -delete 2>/dev/null || true
+      /opt/homebrew/bin/brew completions link 2>/dev/null || true
+    fi
   '';
 }

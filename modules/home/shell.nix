@@ -81,8 +81,12 @@
       '')
 
       # Priority 550: Add Homebrew completions to fpath before compinit (570)
+      # Remove dangling symlinks first -- stale completions cause compinit errors
       (lib.mkOrder 550 ''
         if [[ -d /opt/homebrew/share/zsh/site-functions ]]; then
+          for f in /opt/homebrew/share/zsh/site-functions/_*; do
+            [[ -L "$f" && ! -e "$f" ]] && rm -f "$f"
+          done
           fpath=(/opt/homebrew/share/zsh/site-functions $fpath)
         fi
       '')
