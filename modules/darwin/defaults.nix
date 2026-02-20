@@ -39,6 +39,9 @@
 
   # ── Language & Region (extended) ─────────────────────────────────
   system.defaults.CustomUserPreferences.".GlobalPreferences" = {
+    "com.apple.mouse.scaling" = 2;            # tracking speed (~70%)
+    "com.apple.swipescrolldirection" = true;   # natural scrolling
+
     AppleLanguages = [ "en-US" "fa-US" ];
     AppleLocale = "en_US";
     AppleMeasurementUnits = "Centimeters";
@@ -74,6 +77,30 @@
 
   system.defaults.CustomUserPreferences."com.apple.AppleMultitouchTrackpad" = {
     Clicking = 1;               # tap-to-click (mirrors trackpad.Clicking for built-in trackpad)
+  };
+
+  # ── Mouse (Magic Mouse) ───────────────────────────────────────────
+  # Both domains needed: AppleMultitouchMouse (USB) and Bluetooth variant
+  system.defaults.CustomUserPreferences."com.apple.AppleMultitouchMouse" = {
+    MouseButtonMode = "TwoButton";          # secondary click: right side
+    MouseButtonDivision = 55;               # click zone split point
+    MouseOneFingerDoubleTapGesture = 1;     # smart zoom: double-tap with one finger
+    MouseTwoFingerDoubleTapGesture = 3;     # mission control: double-tap with two fingers
+    MouseTwoFingerHorizSwipeGesture = 2;    # swipe between full-screen apps: two fingers
+    MouseHorizontalScroll = 1;
+    MouseVerticalScroll = 1;
+    MouseMomentumScroll = 1;
+  };
+
+  system.defaults.CustomUserPreferences."com.apple.driver.AppleBluetoothMultitouch.mouse" = {
+    MouseButtonMode = "TwoButton";
+    MouseButtonDivision = 55;
+    MouseOneFingerDoubleTapGesture = 1;
+    MouseTwoFingerDoubleTapGesture = 3;
+    MouseTwoFingerHorizSwipeGesture = 2;
+    MouseHorizontalScroll = 1;
+    MouseVerticalScroll = 1;
+    MouseMomentumScroll = 1;
   };
 
   # ── Finder ─────────────────────────────────────────────────────────

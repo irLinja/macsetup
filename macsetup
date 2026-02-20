@@ -38,11 +38,8 @@ error() {
 }
 
 gc() {
-  info "Pruning old generations (keeping last 3)..."
-  sudo nix-env -p /nix/var/nix/profiles/system --delete-generations +3
-  info "Collecting garbage..."
-  sudo nix-collect-garbage
-  info "Garbage collection complete."
+  sudo nix-env -p /nix/var/nix/profiles/system --delete-generations +3 2>/dev/null
+  sudo nix-collect-garbage &>/dev/null
 }
 
 usage() {
