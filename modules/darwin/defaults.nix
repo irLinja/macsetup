@@ -25,7 +25,15 @@
   # ── Keyboard / Input ──────────────────────────────────────────────
   system.defaults.NSGlobalDomain = {
     KeyRepeat = 5;              # stock: 6 (lower = faster)
-    InitialKeyRepeat = 30;      # stock: 25 (higher = longer delay before repeat)
+    InitialKeyRepeat = 20;      # stock: 25 (higher = longer delay before repeat)
+
+    # ── Language & Region ─────────────────────────────────────────
+    AppleLanguages = [ "en-US" "fa-US" ];
+    AppleLocale = "en_US";
+    AppleMeasurementUnits = "Centimeters";
+    AppleMetricSystem = true;
+    AppleTemperatureUnit = "Celsius";
+    AppleICUForce24HourTime = false;
 
     # ── Appearance ─────────────────────────────────────────────────
     # Automatic light/dark switching based on time of day ("Auto" mode).
@@ -35,11 +43,37 @@
     AppleInterfaceStyleSwitchesAutomatically = true;  # stock: false
   };
 
+  # ── Language & Region (extended) ─────────────────────────────────
+  system.defaults.CustomUserPreferences.".GlobalPreferences" = {
+    AppleFirstWeekday = { gregorian = 2; };   # Monday
+    AppleICUDateFormatStrings = { "1" = "d/M/yy"; };  # short date: 20/2/26
+  };
+
+  # ── Input Sources ────────────────────────────────────────────────
+  system.defaults.CustomUserPreferences."com.apple.HIToolbox" = {
+    AppleEnabledInputSources = [
+      {
+        InputSourceKind = "Keyboard Layout";
+        "KeyboardLayout ID" = 0;
+        "KeyboardLayout Name" = "U.S.";
+      }
+      {
+        InputSourceKind = "Keyboard Layout";
+        "KeyboardLayout ID" = -2901;
+        "KeyboardLayout Name" = "Persian-ISIRI 2901";
+      }
+    ];
+  };
+
   # ── Trackpad ───────────────────────────────────────────────────────
   # Omitted: natural scrolling, three-finger drag, right-click, mouse
   # scaling (all at macOS defaults per user decision).
   system.defaults.trackpad = {
     Clicking = true;            # stock: false (enables tap-to-click)
+  };
+
+  system.defaults.CustomUserPreferences."com.apple.AppleMultitouchTrackpad" = {
+    Clicking = 1;               # tap-to-click (mirrors trackpad.Clicking for built-in trackpad)
   };
 
   # ── Finder ─────────────────────────────────────────────────────────
