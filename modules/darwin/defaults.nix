@@ -1,4 +1,8 @@
-{ ... }: {
+{ config, ... }:
+let
+  username = config.system.primaryUser;
+in
+{
   # ── Dock ───────────────────────────────────────────────────────────
   # Only settings that differ from stock macOS defaults.
   # Omitted: position, magnification, minimize-effect,
@@ -128,20 +132,20 @@
     # absent). Re-writing on every rebuild breaks smart zoom because
     # `defaults write` notifies MouseExtension via cfprefsd but without the
     # private XPC handshake that System Settings sends — gesture state breaks.
-    if ! launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults read com.apple.AppleMultitouchMouse UserPreferences &>/dev/null; then
+    if ! launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults read com.apple.AppleMultitouchMouse UserPreferences &>/dev/null; then
       MOUSE_DOMAINS=(
         com.apple.AppleMultitouchMouse
         com.apple.driver.AppleBluetoothMultitouch.mouse
       )
       for domain in "''${MOUSE_DOMAINS[@]}"; do
-        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseButtonMode -string TwoButton
-        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseButtonDivision -int 55
-        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseOneFingerDoubleTapGesture -int 1
-        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseTwoFingerDoubleTapGesture -int 3
-        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseTwoFingerHorizSwipeGesture -int 2
-        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseHorizontalScroll -int 1
-        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseVerticalScroll -int 1
-        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseMomentumScroll -int 1
+        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseButtonMode -string TwoButton
+        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseButtonDivision -int 55
+        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseOneFingerDoubleTapGesture -int 1
+        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseTwoFingerDoubleTapGesture -int 3
+        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseTwoFingerHorizSwipeGesture -int 2
+        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseHorizontalScroll -int 1
+        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseVerticalScroll -int 1
+        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseMomentumScroll -int 1
       done
     fi
 
