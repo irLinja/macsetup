@@ -80,28 +80,9 @@
   };
 
   # ── Mouse (Magic Mouse) ───────────────────────────────────────────
-  # Both domains needed: AppleMultitouchMouse (USB) and Bluetooth variant
-  system.defaults.CustomUserPreferences."com.apple.AppleMultitouchMouse" = {
-    MouseButtonMode = "TwoButton";          # secondary click: right side
-    MouseButtonDivision = 55;               # click zone split point
-    MouseOneFingerDoubleTapGesture = 1;     # smart zoom: double-tap with one finger
-    MouseTwoFingerDoubleTapGesture = 3;     # mission control: double-tap with two fingers
-    MouseTwoFingerHorizSwipeGesture = 2;    # swipe between full-screen apps: two fingers
-    MouseHorizontalScroll = 1;
-    MouseVerticalScroll = 1;
-    MouseMomentumScroll = 1;
-  };
-
-  system.defaults.CustomUserPreferences."com.apple.driver.AppleBluetoothMultitouch.mouse" = {
-    MouseButtonMode = "TwoButton";
-    MouseButtonDivision = 55;
-    MouseOneFingerDoubleTapGesture = 1;
-    MouseTwoFingerDoubleTapGesture = 3;
-    MouseTwoFingerHorizSwipeGesture = 2;
-    MouseHorizontalScroll = 1;
-    MouseVerticalScroll = 1;
-    MouseMomentumScroll = 1;
-  };
+  # Written in post-activation (after activateSettings -u) to avoid
+  # breaking smart zoom. nix-darwin's CustomUserPreferences writes
+  # trigger activateSettings to disrupt MouseExtension's live state.
 
   # ── Finder ─────────────────────────────────────────────────────────
   # Intentionally omitted. No non-default Finder settings to declare
@@ -142,6 +123,27 @@
   system.activationScripts.postActivation.text = ''
     /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
     killall Dock 2>/dev/null || true
+
+    # Magic Mouse defaults: only written on first-time setup (UserPreferences
+    # absent). Re-writing on every rebuild breaks smart zoom because
+    # `defaults write` notifies MouseExtension via cfprefsd but without the
+    # private XPC handshake that System Settings sends — gesture state breaks.
+    if ! launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults read com.apple.AppleMultitouchMouse UserPreferences &>/dev/null; then
+      MOUSE_DOMAINS=(
+        com.apple.AppleMultitouchMouse
+        com.apple.driver.AppleBluetoothMultitouch.mouse
+      )
+      for domain in "''${MOUSE_DOMAINS[@]}"; do
+        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseButtonMode -string TwoButton
+        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseButtonDivision -int 55
+        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseOneFingerDoubleTapGesture -int 1
+        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseTwoFingerDoubleTapGesture -int 3
+        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseTwoFingerHorizSwipeGesture -int 2
+        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseHorizontalScroll -int 1
+        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseVerticalScroll -int 1
+        launchctl asuser "$(id -u arash)" sudo --user=arash -- defaults write "$domain" MouseMomentumScroll -int 1
+      done
+    fi
 
     # Clean up dangling symlinks in Homebrew's zsh completions directory
     # (stale _brew, _brew_cask, or formula leftovers cause compinit errors)

@@ -4,6 +4,7 @@
     enableZshIntegration = true;
 
     settings = {
+      command_timeout = 1000;
       hostname = {
         ssh_only = false;
       };

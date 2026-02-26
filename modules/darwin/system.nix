@@ -3,6 +3,9 @@
   # so nix-darwin must not attempt to manage it.
   nix.enable = false;
 
+  # Disable options.json generation to avoid impure store path warning.
+  documentation.enable = false;
+
   # State version for nix-darwin (6 is current for new installations).
   system.stateVersion = 6;
 
