@@ -44,14 +44,48 @@
 
   };
 
-  outputs = inputs@{ self, nixpkgs, nix-darwin, home-manager, nix-homebrew, ... }: {
-    darwinConfigurations.macsetup = nix-darwin.lib.darwinSystem {
-      specialArgs = { inherit inputs; };
-      modules = [
-        ./hosts/shared.nix
-        home-manager.darwinModules.default
-        nix-homebrew.darwinModules.nix-homebrew
-      ];
-    };
+  outputs = inputs@{ self, nixpkgs, nix-darwin, home-manager, nix-homebrew, ... }:
+  let
+    lib = nixpkgs.lib;
+    userConfig = import ./user.nix;
+
+    # Auto-discover host files in hosts/ (excluding example.nix and shared.nix)
+    # Each .nix file becomes a darwinConfiguration named after the file (sans .nix)
+    hostFiles = lib.filterAttrs
+      (name: type:
+        type == "regular"
+        && lib.hasSuffix ".nix" name
+        && name != "default.nix"
+        && name != "example.nix"
+        && name != "shared.nix"    # handled by legacy macsetup entry below
+      )
+      (builtins.readDir ./hosts);
+
+    mkDarwinConfig = fileName:
+      nix-darwin.lib.darwinSystem {
+        specialArgs = { inherit inputs userConfig; };
+        modules = [
+          ./hosts/${fileName}
+          home-manager.darwinModules.default
+          nix-homebrew.darwinModules.nix-homebrew
+        ];
+      };
+
+    # Auto-discovered hosts (filename without .nix -> config)
+    autoConfigs = lib.mapAttrs'
+      (name: _: lib.nameValuePair (lib.removeSuffix ".nix" name) (mkDarwinConfig name))
+      hostFiles;
+  in {
+    darwinConfigurations = {
+      # Legacy entry -- keeps `darwin-rebuild switch --flake .#macsetup` working
+      macsetup = nix-darwin.lib.darwinSystem {
+        specialArgs = { inherit inputs userConfig; };
+        modules = [
+          ./hosts/shared.nix
+          home-manager.darwinModules.default
+          nix-homebrew.darwinModules.nix-homebrew
+        ];
+      };
+    } // autoConfigs;
   };
 }
