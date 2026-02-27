@@ -1,0 +1,28 @@
+# user.nix -- Your personal configuration
+# Copy this file: cp user.nix.example user.nix
+# Then edit user.nix with your details.
+#
+# IMPORTANT: After editing, run: git add -f user.nix
+# (This is done automatically by the bootstrap wizard)
+{
+  # Required
+  username = "CHANGEME";           # Your macOS username (whoami)
+  fullName = "CHANGEME";           # Your full name (for git commits)
+  email = "CHANGEME@example.com";  # Your email (for git commits)
+
+  # Git signing (optional -- set to null to disable)
+  git = {
+    signing = {
+      key = null;                  # Your SSH public key (string) or null
+      signByDefault = false;
+      format = "ssh";
+      signer = null;               # Path to signing tool (e.g., 1Password) or null
+    };
+    allowedSigners = null;         # "email ssh-type key..." or null
+  };
+
+  # Feature toggles
+  features = {
+    onePassword = false;           # Enable 1Password + SSH agent + git signing integration
+  };
+}
