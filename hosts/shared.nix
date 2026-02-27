@@ -1,4 +1,4 @@
-{ inputs, pkgs, ... }: {
+{ inputs, userConfig, pkgs, ... }: {
   imports = [ ../modules/darwin ];
 
   # Primary user identity (hardcoded per user decision)
@@ -12,7 +12,7 @@
   # Home Manager integration
   home-manager.useGlobalPkgs = true;
   home-manager.useUserPackages = true;
-  home-manager.extraSpecialArgs = { inherit inputs; };
+  home-manager.extraSpecialArgs = { inherit inputs userConfig; };
   home-manager.backupFileExtension = "backup";
   home-manager.users.arash = import ../modules/home;
 
