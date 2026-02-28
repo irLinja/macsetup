@@ -1,9 +1,9 @@
 # Example host configuration -- copy this to create your own host file.
 #
 # Usage:
-#   1. Copy: cp hosts/example.nix hosts/$(hostname -s).nix
+#   1. Run: macsetup capture --gen-host (creates hosts/<hostname>.nix from this template)
 #   2. Edit: Choose your profile, add/remove packages
-#   3. Build: sudo darwin-rebuild switch --flake .#$(hostname -s)
+#   3. Build: macsetup rebuild
 #
 # The config name matches the filename (without .nix extension).
 { inputs, userConfig, pkgs, lib, ... }: {

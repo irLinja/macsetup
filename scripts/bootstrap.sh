@@ -1,15 +1,15 @@
 #!/bin/bash
 # bootstrap.sh - Take a bare Mac to a fully configured nix-darwin + Home Manager system
 #
-# Usage: ./bootstrap.sh [--force]
-#        MACSETUP_USERNAME=myuser MACSETUP_FULLNAME="..." MACSETUP_EMAIL="..." ./bootstrap.sh
+# Usage: macsetup bootstrap [--force]
+#        MACSETUP_USERNAME=myuser MACSETUP_FULLNAME="..." MACSETUP_EMAIL="..." macsetup bootstrap
 #
 # Safe to re-run: detects existing Nix/nix-darwin installs and skips completed steps.
 # On failure: stops immediately with instructions to re-run.
 
 set -euo pipefail
 
-trap 'echo ""; echo "Bootstrap failed at step above."; echo "Fix the issue, then re-run: ./bootstrap.sh"; echo ""' ERR
+trap 'echo ""; echo "Bootstrap failed at step above."; echo "Fix the issue, then re-run: macsetup bootstrap"; echo ""' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -30,7 +30,7 @@ info() {
 error() {
   echo ""
   echo "ERROR: $*"
-  echo "Fix the issue above, then re-run: ./bootstrap.sh"
+  echo "Fix the issue above, then re-run: macsetup bootstrap"
   echo ""
   exit 1
 }
@@ -216,7 +216,7 @@ echo ""
 read -p "Proceed with build? [Y/n] " -n 1 -r REPLY
 echo ""
 if [[ "$REPLY" =~ ^[Nn]$ ]]; then
-  echo "Aborted. Run ./bootstrap.sh again when ready."
+  echo "Aborted. Run 'macsetup bootstrap' again when ready."
   exit 0
 fi
 
@@ -278,6 +278,6 @@ echo ""
 echo "Bootstrap complete!"
 echo ""
 echo "Your Mac is now managed by nix-darwin + Home Manager."
-echo "To apply future changes: sudo darwin-rebuild switch --flake .#$CONFIG_NAME"
-echo "Or use the CLI:          macsetup rebuild"
+echo "To apply future changes:  macsetup rebuild"
+echo "To audit your Mac:       macsetup capture"
 echo ""

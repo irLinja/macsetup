@@ -14,7 +14,7 @@
 #   [I]gnore -- persist to ~/.macsetup/ignore.list (never ask again)
 #   [S]kip   -- do nothing (item appears again on next run)
 #
-# Usage: ./capture.sh
+# Usage: macsetup capture [--gen-host]
 # Requires: Nix-provided Bash 5.x (for mapfile), brew (optional), mas (optional)
 
 set -euo pipefail
@@ -40,7 +40,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
 if [[ ! -f "$REPO_ROOT/flake.nix" ]]; then
-  error "Cannot find flake.nix at $REPO_ROOT -- run this script from the macsetup repository."
+  error "Cannot find flake.nix at $REPO_ROOT -- run 'macsetup capture' from within the repository."
   exit 1
 fi
 
@@ -79,7 +79,7 @@ generate_host_config() {
 
   info "Created hosts/${hostname}.nix"
   info "Edit it to choose your profile (personal or work) and add host-specific overrides."
-  info "Build with: sudo darwin-rebuild switch --flake .#${hostname}"
+  info "Build with: macsetup rebuild"
 }
 
 success() { printf "  ${GREEN}>>>${RESET} %s\n" "$*"; }
@@ -930,7 +930,7 @@ audit_defaults() {
       warn "DRIFT: $display_name"
       printf "    Nix config: %s\n" "$expected"
       printf "    Live value: %s\n" "$live_value"
-      printf "    (Run 'darwin-rebuild switch' to apply the Nix value)\n"
+      printf "    (Run 'macsetup rebuild' to apply the Nix value)\n"
     fi
   done < <(get_defaults_checks)
 
@@ -938,7 +938,7 @@ audit_defaults() {
     info "No drift detected -- all macOS defaults match Nix config."
   else
     warn "$drift_found default(s) have drifted from Nix config."
-    info "Run 'darwin-rebuild switch' (or 'macsetup rebuild') to re-apply."
+    info "Run 'macsetup rebuild' to re-apply."
   fi
 }
 
@@ -1090,14 +1090,14 @@ main() {
   echo ""
 
   if [[ $ADDED -gt 0 ]]; then
-    read -p "  Run darwin-rebuild switch now? [y/N] " -n 1 -r rebuild_choice
+    read -p "  Run macsetup rebuild now? [y/N] " -n 1 -r rebuild_choice
     echo ""
     if [[ "$rebuild_choice" =~ ^[Yy]$ ]]; then
       info "Rebuilding..."
       cd "$REPO_ROOT"
       sudo darwin-rebuild switch --flake ".#$(config_name)"
     else
-      info "Skipped. Run 'macsetup rebuild' or 'sudo darwin-rebuild switch --flake .#$(config_name)' when ready."
+      info "Skipped. Run 'macsetup rebuild' when ready."
     fi
   fi
 }

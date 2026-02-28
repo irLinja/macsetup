@@ -107,11 +107,11 @@ The `macsetup rebuild` command automatically stages `user.nix` before each build
 
 ### Workflow
 
-1. New user runs `macsetup bootstrap` (or `scripts/bootstrap.sh`)
+1. New user runs `macsetup bootstrap`
 2. Wizard prompts for name, email, 1Password preference, signing key
 3. Generates `user.nix` from `user.nix.example`
 4. Stages with `git add -f user.nix` and applies `skip-worktree`
-5. Builds with `darwin-rebuild switch --flake .#<config-name>`
+5. Builds with `macsetup rebuild`
 
 After editing `user.nix`, run `macsetup rebuild` (which auto-stages) or manually `git add -f user.nix` before `darwin-rebuild switch`.
 
@@ -126,10 +126,10 @@ After editing `user.nix`, run `macsetup rebuild` (which auto-stages) or manually
 
 ### Adding a New Machine
 
-1. Run `macsetup capture --gen-host` (or `scripts/capture.sh --gen-host`) to create `hosts/$(hostname -s).nix` from `example.nix`
+1. Run `macsetup capture --gen-host` to create `hosts/$(hostname -s).nix` from `example.nix`
 2. Edit the file: choose a profile (`../profiles/personal` or `../profiles/work`), add host-specific packages
 3. `git add hosts/yourhostname.nix`
-4. `sudo darwin-rebuild switch --flake .#yourhostname`
+4. `macsetup rebuild`
 
 The `macsetup` CLI and `bootstrap.sh` automatically detect hostname-based config files.
 
