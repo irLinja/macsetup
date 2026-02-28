@@ -42,6 +42,26 @@ gc() {
   sudo nix-collect-garbage &>/dev/null
 }
 
+# Detect the darwin configuration name: use hostname if a matching host file
+# exists, otherwise fall back to the legacy "macsetup" entry.
+config_name() {
+  local hostname
+  hostname="$(hostname -s)"
+  if [[ -f "$REPO_ROOT/hosts/${hostname}.nix" ]]; then
+    echo "$hostname"
+  else
+    echo "macsetup"
+  fi
+}
+
+# Ensure user.nix is staged so the Nix flake can see it (flakes ignore
+# unstaged files). This is a no-op when user.nix does not exist yet.
+stage_user_nix() {
+  if [[ -f "$REPO_ROOT/user.nix" ]]; then
+    git -C "$REPO_ROOT" add -f user.nix 2>/dev/null || true
+  fi
+}
+
 usage() {
   cat <<EOF
 macsetup -- declarative macOS setup with Nix
@@ -80,23 +100,33 @@ cmd_bootstrap() {
   if [ ! -f "$REPO_ROOT/scripts/bootstrap.sh" ]; then
     error "bootstrap.sh not found at $REPO_ROOT/scripts/bootstrap.sh"
   fi
-  exec "$REPO_ROOT/scripts/bootstrap.sh"
+  if [ "$force" = true ]; then
+    exec "$REPO_ROOT/scripts/bootstrap.sh" --force
+  else
+    exec "$REPO_ROOT/scripts/bootstrap.sh"
+  fi
 }
 
 cmd_rebuild() {
-  info "Rebuilding system configuration..."
+  stage_user_nix
+  local cfg
+  cfg="$(config_name)"
+  info "Rebuilding system configuration (.#$cfg)..."
   cd "$REPO_ROOT"
-  sudo darwin-rebuild switch --flake .#macsetup
+  sudo darwin-rebuild switch --flake ".#$cfg"
   gc
   info "Rebuild complete."
 }
 
 cmd_update() {
+  stage_user_nix
+  local cfg
+  cfg="$(config_name)"
   info "Updating flake inputs..."
   cd "$REPO_ROOT"
   nix flake update
-  info "Flake inputs updated. Rebuilding..."
-  sudo darwin-rebuild switch --flake .#macsetup
+  info "Flake inputs updated. Rebuilding (.#$cfg)..."
+  sudo darwin-rebuild switch --flake ".#$cfg"
   gc
   info "Update complete."
 }
