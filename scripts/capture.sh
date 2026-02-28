@@ -44,6 +44,46 @@ if [[ ! -f "$REPO_ROOT/flake.nix" ]]; then
   exit 1
 fi
 
+# Detect the darwin configuration name: use hostname if a matching host file
+# exists, otherwise fall back to the legacy "macsetup" entry.
+config_name() {
+  local hostname
+  hostname="$(hostname -s)"
+  if [[ -f "$REPO_ROOT/hosts/${hostname}.nix" ]]; then
+    echo "$hostname"
+  else
+    echo "macsetup"
+  fi
+}
+
+# Generate a host config file for the current machine from the example.nix template.
+# Called from capture (and can be called standalone via the --gen-host flag).
+generate_host_config() {
+  local hostname
+  hostname="$(hostname -s)"
+  local target="$REPO_ROOT/hosts/${hostname}.nix"
+
+  if [[ -f "$target" ]]; then
+    info "Host config already exists: hosts/${hostname}.nix -- skipping generation."
+    return
+  fi
+
+  if [[ ! -f "$REPO_ROOT/hosts/example.nix" ]]; then
+    warn "hosts/example.nix not found -- cannot generate host config."
+    return
+  fi
+
+  info "Generating host config for ${hostname}..."
+  cp "$REPO_ROOT/hosts/example.nix" "$target"
+  git -C "$REPO_ROOT" add "$target"
+
+  info "Created hosts/${hostname}.nix"
+  info "Edit it to choose your profile (personal or work) and add host-specific overrides."
+  info "Build with: sudo darwin-rebuild switch --flake .#${hostname}"
+}
+
+success() { printf "  ${GREEN}>>>${RESET} %s\n" "$*"; }
+
 # Counters
 ADDED=0
 IGNORED=0
@@ -1002,11 +1042,20 @@ audit_fonts() {
 ###############################################################################
 
 main() {
+  # Handle --gen-host flag (standalone host config generation)
+  if [[ "${1:-}" == "--gen-host" ]]; then
+    generate_host_config
+    exit 0
+  fi
+
   header "macsetup capture -- Audit Your Mac"
   echo ""
   info "This tool scans your Mac for unmanaged items and helps you"
   info "add them to your Nix configuration."
   echo ""
+
+  # Generate host config if one doesn't exist yet
+  generate_host_config
 
   init_ignore_list
 
@@ -1046,9 +1095,9 @@ main() {
     if [[ "$rebuild_choice" =~ ^[Yy]$ ]]; then
       info "Rebuilding..."
       cd "$REPO_ROOT"
-      sudo darwin-rebuild switch --flake .#macsetup
+      sudo darwin-rebuild switch --flake ".#$(config_name)"
     else
-      info "Skipped. Run 'macsetup rebuild' or 'sudo darwin-rebuild switch --flake .#macsetup' when ready."
+      info "Skipped. Run 'macsetup rebuild' or 'sudo darwin-rebuild switch --flake .#$(config_name)' when ready."
     fi
   fi
 }
