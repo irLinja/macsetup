@@ -160,7 +160,7 @@ cmd_capture() {
   if [ ! -f "$REPO_ROOT/scripts/capture.sh" ]; then
     error "capture.sh not found at $REPO_ROOT/scripts/capture.sh"
   fi
-  exec "$REPO_ROOT/scripts/capture.sh"
+  exec "$REPO_ROOT/scripts/capture.sh" "$@"
 }
 
 # ---------------------------------------------------------------------------
@@ -195,7 +195,8 @@ case "$1" in
     cmd_list
     ;;
   capture)
-    cmd_capture
+    shift
+    cmd_capture "$@"
     ;;
   -h|--help)
     usage
