@@ -1,5 +1,5 @@
 {
-  description = "macsetup - declarative macOS configuration";
+  description = "macsetup -- declarative macOS setup with nix-darwin and Home Manager";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
