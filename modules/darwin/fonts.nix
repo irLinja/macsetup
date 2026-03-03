@@ -7,5 +7,6 @@
     nerd-fonts.meslo-lg         # Terminal font (Starship/p10k compatible)
     nerd-fonts.fira-code        # Ligature-enabled programming font
     nerd-fonts.symbols-only     # Nerd Font icon glyphs without replacing main font
+    powerline-fonts             # Complete set of Powerline-patched fonts
   ];
 }
