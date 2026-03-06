@@ -64,6 +64,8 @@
       # "monitorcontrol"            # Monitor brightness/volume control
       # "surfshark"                 # VPN client (SSL errors on corporate networks)
       # "zen"                       # Zen browser
+      "ledger-wallet"                 # Ledger Live
+      "monitorcontrol"                   # MonitorControl
     ];
 
     masApps = {

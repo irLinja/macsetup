@@ -39,6 +39,7 @@
         "kubectl"
         "terraform"
         "docker"
+        "direnv"
         "copybuffer"
         "sudo"
         "extract"

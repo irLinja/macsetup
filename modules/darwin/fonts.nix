@@ -8,5 +8,6 @@
     nerd-fonts.fira-code        # Ligature-enabled programming font
     nerd-fonts.symbols-only     # Nerd Font icon glyphs without replacing main font
     powerline-fonts             # Complete set of Powerline-patched fonts
+    nerd-fonts.hack            # User-installed font
   ];
 }
