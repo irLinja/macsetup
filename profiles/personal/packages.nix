@@ -14,6 +14,7 @@
       wget
       gh
       pre-commit
+      watch
       terminal-notifier
       zsh-completions
 
