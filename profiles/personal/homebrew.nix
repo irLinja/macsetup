@@ -1,4 +1,8 @@
 { lib, ... }: {
+  homebrew.brews = lib.mkDefault [
+    "watch"
+  ];
+
   homebrew.casks = lib.mkDefault [
     # Terminal & Development
     "ghostty"
