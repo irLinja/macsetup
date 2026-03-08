@@ -101,6 +101,7 @@
       "kubectl-ai"                # AI-powered Kubernetes assistant
       "kubectx"                   # Switch kubectl contexts/namespaces
       "stern"                     # Multi-pod log tailing for K8s
+      "watch"                     # Execute a program periodically
 
       # -- Tap Packages --
       "peonping/tap/peon-ping"    # Sound effects and desktop notifications for AI coding agents
