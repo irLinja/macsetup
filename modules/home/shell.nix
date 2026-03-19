@@ -74,6 +74,13 @@
     # ── initContent (priority-ordered shell snippets) ────────────
     initContent = lib.mkMerge [
 
+      # Priority 100: Prepend ~/.rd/bin so Rancher Desktop binaries win
+      (lib.mkOrder 100 ''
+        if [[ -d "$HOME/.rd/bin" ]]; then
+          export PATH="$HOME/.rd/bin:$PATH"
+        fi
+      '')
+
       # Priority 500: Use local starship config override if it exists
       (lib.mkOrder 500 ''
         if [[ -f "$HOME/.config/starship-local.toml" ]]; then
@@ -159,10 +166,11 @@
 
   # ── PATH ────────────────────────────────────────────────────────
   home.sessionPath = [
+    "$HOME/.npm-global/bin"
     "$HOME/.krew/bin"
     "$HOME/.local/bin"
     "$HOME/.tfversion/bin"
-    # "$HOME/.rd/bin"          # Rancher Desktop -- uncomment if used
+    # "$HOME/.rd/bin"          # Rancher Desktop -- prepended via initContent for priority
     # "$HOME/.antigravity/bin" # uncomment if used
   ];
 
