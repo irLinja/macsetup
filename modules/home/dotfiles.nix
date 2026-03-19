@@ -58,6 +58,7 @@
 
     ".npmrc".text = ''
       registry=https://registry.npmjs.org/
+      prefix=''${HOME}/.npm-global
     '';
 
     "Library/Application Support/com.mitchellh.ghostty/config".text = ''
