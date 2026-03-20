@@ -74,8 +74,11 @@
     # ── initContent (priority-ordered shell snippets) ────────────
     initContent = lib.mkMerge [
 
-      # Priority 100: Prepend ~/.rd/bin so Rancher Desktop binaries win
+      # Priority 100: Prepend ~/.rd/bin and ~/go/bin so they're available in all shells
       (lib.mkOrder 100 ''
+        if [[ -d "$HOME/go/bin" ]]; then
+          export PATH="$HOME/go/bin:$PATH"
+        fi
         if [[ -d "$HOME/.rd/bin" ]]; then
           export PATH="$HOME/.rd/bin:$PATH"
         fi
@@ -166,6 +169,7 @@
 
   # ── PATH ────────────────────────────────────────────────────────
   home.sessionPath = [
+    "$HOME/go/bin"
     "$HOME/.npm-global/bin"
     "$HOME/.krew/bin"
     "$HOME/.local/bin"
