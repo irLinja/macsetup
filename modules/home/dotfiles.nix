@@ -62,7 +62,7 @@
     '';
 
     "Library/Application Support/com.mitchellh.ghostty/config".text = ''
-      font-size = 16
+      font-size = 22
       theme = Elegant
       background-opacity = 0.85
       window-padding-x = 4

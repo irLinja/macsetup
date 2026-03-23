@@ -103,6 +103,9 @@
       "stern"                     # Multi-pod log tailing for K8s
       "watch"                     # Execute a program periodically
 
+      # -- Containers --
+      "container"                 # Apple Containers CLI
+
       # -- Tap Packages --
       "peonping/tap/peon-ping"    # Sound effects and desktop notifications for AI coding agents
       "tfversion/tap/tfversion"   # Manage Terraform versions
