@@ -98,6 +98,7 @@
       "k9s"                       # Terminal UI for K8s clusters
       "kind"                      # Kubernetes in Docker (local clusters)
       "kubebuilder"               # K8s operator SDK
+      "kubernetes-cli"             # kubectl - Kubernetes CLI
       "kubectl-ai"                # AI-powered Kubernetes assistant
       "kubectx"                   # Switch kubectl contexts/namespaces
       "stern"                     # Multi-pod log tailing for K8s
