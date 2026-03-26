@@ -165,6 +165,10 @@
     enable = true;
     enableZshIntegration = true;
     nix-direnv.enable = true;
+    package = pkgs.direnv.overrideAttrs (old: {
+      # Fix: direnv 2.37.1 uses -linkmode=external which requires cgo
+      env = (old.env or { }) // { CGO_ENABLED = "1"; };
+    });
   };
 
   # ── PATH ────────────────────────────────────────────────────────
