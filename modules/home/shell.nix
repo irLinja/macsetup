@@ -38,6 +38,7 @@
         "git"
         "kubectl"
         "terraform"
+        "opentofu"
         "docker"
         "direnv"
         "copybuffer"

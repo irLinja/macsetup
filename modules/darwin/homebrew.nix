@@ -57,6 +57,7 @@
 
       # -- Utilities --
       "ledger-wallet"               # Ledger hardware wallet manager
+      "qflipper"                    # Flipper Zero companion app
       "transmission"                # BitTorrent client
 
       # -- Shelved (uncomment to enable) --
@@ -87,6 +88,7 @@
       "azure-cli"                 # Azure CLI
       "kubelogin"                 # Azure K8s credential plugin
       "checkov"                   # IaC static analysis / security scanner
+      "opentofu"                  # Open-source Terraform alternative
       "terraform"                 # Infrastructure as Code
       "terraform-docs"            # Terraform documentation generator
       "terraform-mcp-server"      # MCP server for Terraform

@@ -19,7 +19,7 @@
       };
 
       golang = {
-        symbol = "";
+        symbol = " ";
       };
     };
   };
