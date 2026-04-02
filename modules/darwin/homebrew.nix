@@ -130,8 +130,8 @@
       # "krr"                     # K8s Resource Recommender by Robusta
       # "skopeo"                  # Container image operations
       # "shellcheck"              # Shell script linter
-      # "trivy"                   # Container/IaC vulnerability scanner
-      # "trufflehog"              # Secret scanner
+      "trivy"                    # Container/IaC vulnerability scanner
+      "trufflehog"               # Secret scanner
       # "mongosh"                 # MongoDB shell
       # "renovate"                # Automated dependency updates
       # "yq"                      # YAML/JSON/XML processor
