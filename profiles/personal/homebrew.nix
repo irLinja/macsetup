@@ -17,6 +17,7 @@
     # Media
     "spotify"
     "iina"
+    "ytmdesktop-youtube-music"
 
     # Internet
     "arc"

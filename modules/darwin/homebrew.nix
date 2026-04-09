@@ -21,7 +21,6 @@
       # -- AI / Development --
       "chatgpt"                     # ChatGPT desktop app
       "claude"                      # Claude Desktop
-      "claude-code"                 # Claude Code CLI
 
       # -- Development --
       "ghostty"                     # GPU-accelerated terminal emulator
@@ -45,6 +44,7 @@
       # -- Media --
       "iina"                        # Media player
       "spotify"                     # Music streaming
+      "ytmdesktop-youtube-music"    # YouTube Music desktop client
 
       # -- Security --
       "1password"                   # Password manager (must be in /Applications for SSH agent)

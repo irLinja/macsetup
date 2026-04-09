@@ -43,9 +43,6 @@ in
 
   # ── Language & Region (extended) ─────────────────────────────────
   system.defaults.CustomUserPreferences.".GlobalPreferences" = {
-    "com.apple.mouse.scaling" = 2;            # tracking speed (~70%)
-    "com.apple.swipescrolldirection" = true;   # natural scrolling
-
     AppleLanguages = [ "en-US" "fa-US" ];
     AppleLocale = "en_US";
     AppleMeasurementUnits = "Centimeters";
@@ -71,22 +68,6 @@ in
       }
     ];
   };
-
-  # ── Trackpad ───────────────────────────────────────────────────────
-  # Omitted: natural scrolling, three-finger drag, right-click, mouse
-  # scaling (all at macOS defaults per user decision).
-  system.defaults.trackpad = {
-    Clicking = true;            # stock: false (enables tap-to-click)
-  };
-
-  system.defaults.CustomUserPreferences."com.apple.AppleMultitouchTrackpad" = {
-    Clicking = 1;               # tap-to-click (mirrors trackpad.Clicking for built-in trackpad)
-  };
-
-  # ── Mouse (Magic Mouse) ───────────────────────────────────────────
-  # Written in post-activation (after activateSettings -u) to avoid
-  # breaking smart zoom. nix-darwin's CustomUserPreferences writes
-  # trigger activateSettings to disrupt MouseExtension's live state.
 
   # ── Finder ─────────────────────────────────────────────────────────
   # Intentionally omitted. No non-default Finder settings to declare
@@ -128,26 +109,12 @@ in
     /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
     killall Dock 2>/dev/null || true
 
-    # Magic Mouse defaults: only written on first-time setup (UserPreferences
-    # absent). Re-writing on every rebuild breaks smart zoom because
-    # `defaults write` notifies MouseExtension via cfprefsd but without the
-    # private XPC handshake that System Settings sends — gesture state breaks.
-    if ! launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults read com.apple.AppleMultitouchMouse UserPreferences &>/dev/null; then
-      MOUSE_DOMAINS=(
-        com.apple.AppleMultitouchMouse
-        com.apple.driver.AppleBluetoothMultitouch.mouse
-      )
-      for domain in "''${MOUSE_DOMAINS[@]}"; do
-        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseButtonMode -string TwoButton
-        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseButtonDivision -int 55
-        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseOneFingerDoubleTapGesture -int 1
-        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseTwoFingerDoubleTapGesture -int 3
-        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseTwoFingerHorizSwipeGesture -int 2
-        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseHorizontalScroll -int 1
-        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseVerticalScroll -int 1
-        launchctl asuser "$(id -u ${username})" sudo --user=${username} -- defaults write "$domain" MouseMomentumScroll -int 1
-      done
-    fi
+    # Strip quarantine flag from casks that fail Gatekeeper checks
+    for app in "YouTube Music Desktop App" "Headlamp"; do
+      if [[ -d "/Applications/$app.app" ]]; then
+        xattr -cr "/Applications/$app.app" 2>/dev/null || true
+      fi
+    done
 
     # Clean up dangling symlinks in Homebrew's zsh completions directory
     # (stale _brew, _brew_cask, or formula leftovers cause compinit errors)
