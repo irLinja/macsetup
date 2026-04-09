@@ -22,7 +22,7 @@ in
       "/Applications/Slack.app"
       "/Applications/Ghostty.app"
       "/Applications/Spotify.app"
-      "/System/Applications/iPhone Mirroring.app"
+      "/Applications/YouTube Music Desktop App.app"
     ];
   };
 
