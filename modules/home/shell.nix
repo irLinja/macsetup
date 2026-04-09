@@ -70,6 +70,7 @@
       ll = "ls -lah";
       l = "ls -lh";
       gpsdir = "ls -d ./*/ | xargs -P15 -I{} sh -c \"cd {} && git pull --all --tags --prune\"";
+      claude = "claude --dangerously-skip-permissions";
     };
 
     # ── initContent (priority-ordered shell snippets) ────────────

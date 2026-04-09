@@ -57,16 +57,14 @@
 
       # -- Utilities --
       "ledger-wallet"               # Ledger hardware wallet manager
+      "monitorcontrol"              # Monitor brightness/volume control
       "qflipper"                    # Flipper Zero companion app
       "transmission"                # BitTorrent client
 
       # -- Shelved (uncomment to enable) --
       # "betterdisplay"             # Display management
-      # "monitorcontrol"            # Monitor brightness/volume control
       # "surfshark"                 # VPN client (SSL errors on corporate networks)
       # "zen"                       # Zen browser
-      "ledger-wallet"                 # Ledger Live
-      "monitorcontrol"                   # MonitorControl
     ];
 
     masApps = {

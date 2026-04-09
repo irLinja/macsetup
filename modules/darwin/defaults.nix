@@ -109,10 +109,14 @@ in
     /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
     killall Dock 2>/dev/null || true
 
-    # Strip quarantine flag from casks that fail Gatekeeper checks
+    # Strip quarantine flag from casks that fail Gatekeeper checks.
+    # Use -dr (delete recursive) for only the quarantine attribute —
+    # xattr -cr strips ALL attributes including the code signature,
+    # which breaks Electron keychain access (Safe Storage) and causes
+    # apps like YTMDesktop to lose their login on every launch.
     for app in "YouTube Music Desktop App" "Headlamp"; do
       if [[ -d "/Applications/$app.app" ]]; then
-        xattr -cr "/Applications/$app.app" 2>/dev/null || true
+        xattr -dr com.apple.quarantine "/Applications/$app.app" 2>/dev/null || true
       fi
     done
 

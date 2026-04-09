@@ -1,28 +1,4 @@
-{ lib, ... }: {
-  homebrew.casks = lib.mkDefault [
-    # Terminal & Development
-    "ghostty"
-    "visual-studio-code"
-    "rancher"
-
-    # Productivity
-    "raycast"
-    "notion"
-
-    # Communication
-    "slack"
-    "telegram"
-    "whatsapp"
-
-    # Media
-    "spotify"
-    "iina"
-    "ytmdesktop-youtube-music"
-
-    # Internet
-    "arc"
-
-    # Utilities
-    "transmission"
-  ];
+{ ... }: {
+  # Personal profile casks and brews are declared in modules/darwin/homebrew.nix.
+  # Add personal-only overrides or additions here.
 }
