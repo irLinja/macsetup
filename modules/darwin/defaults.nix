@@ -110,15 +110,19 @@ in
     killall Dock 2>/dev/null || true
 
     # Strip quarantine flag from casks that fail Gatekeeper checks.
-    # Use -dr (delete recursive) for only the quarantine attribute —
-    # xattr -cr strips ALL attributes including the code signature,
-    # which breaks Electron keychain access (Safe Storage) and causes
-    # apps like YTMDesktop to lose their login on every launch.
     for app in "YouTube Music Desktop App" "Headlamp"; do
       if [[ -d "/Applications/$app.app" ]]; then
         xattr -dr com.apple.quarantine "/Applications/$app.app" 2>/dev/null || true
       fi
     done
+
+    # YTMDesktop ships with an ad-hoc signature (Info.plist not bound),
+    # which prevents Electron Safe Storage from accessing the keychain.
+    # Without keychain access, encrypted cookies can't persist and the
+    # app logs out on every relaunch. Ad-hoc re-signing fixes this.
+    if [[ -d "/Applications/YouTube Music Desktop App.app" ]]; then
+      codesign --force --deep --sign - "/Applications/YouTube Music Desktop App.app" 2>/dev/null || true
+    fi
 
     # Clean up dangling symlinks in Homebrew's zsh completions directory
     # (stale _brew, _brew_cask, or formula leftovers cause compinit errors)
