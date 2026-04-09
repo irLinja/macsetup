@@ -11,7 +11,7 @@ in
     autohide = true;                # stock: false
     tilesize = 64;                  # stock: ~48
     minimize-to-application = true; # stock: false
-    show-recents = false;           # stock: true — prevent transient apps in Dock
+    show-recents = true;
     persistent-apps = [
       "/System/Applications/Messages.app"
       "/Applications/Arc.app"
