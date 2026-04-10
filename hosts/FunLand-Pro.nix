@@ -39,6 +39,7 @@
       "homebrew/homebrew-cask" = inputs.homebrew-cask;
       "peonping/homebrew-tap" = inputs.homebrew-peonping;
       "tfversion/homebrew-tap" = inputs.homebrew-tfversion;
+      "theboredteam/homebrew-boring-notch" = inputs.homebrew-boredteam;
     };
   };
 

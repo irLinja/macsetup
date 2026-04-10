@@ -15,6 +15,7 @@
     taps = [
       "homebrew/homebrew-core"
       "homebrew/homebrew-cask"
+      "theboredteam/boring-notch"
     ];
 
     casks = [
@@ -58,6 +59,8 @@
       # -- Utilities --
       "ledger-wallet"               # Ledger hardware wallet manager
       "monitorcontrol"              # Monitor brightness/volume control
+      "thaw"                        # Menu bar manager
+      "theboredteam/boring-notch/boring-notch"  # Dynamic notch utility
       "qflipper"                    # Flipper Zero companion app
       "transmission"                # BitTorrent client
 

@@ -39,6 +39,10 @@
       url = "github:tfversion/homebrew-tap";
       flake = false;
     };
+    homebrew-boredteam = {
+      url = "github:TheBoredTeam/homebrew-boring-notch";
+      flake = false;
+    };
 
     # mac-app-util.url = "github:hraban/mac-app-util";
 
