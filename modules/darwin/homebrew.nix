@@ -24,13 +24,14 @@
       "claude"                      # Claude Desktop
 
       # -- Development --
+      "gcloud-cli"                  # Google Cloud CLI (gcloud, gsutil, bq)
       "ghostty"                     # GPU-accelerated terminal emulator
       "headlamp"                    # Kubernetes web UI
       "rancher"                     # Rancher Desktop (container management)
       "visual-studio-code"          # Code editor
 
       # -- Productivity --
-      "grammarly-desktop"           # Writing assistant
+      "linear-linear"               # Linear issue tracker desktop app
       "microsoft-outlook"           # Microsoft Outlook email client
       "microsoft-teams"             # Microsoft Teams communication
       "miro"                        # Miro collaborative whiteboard
@@ -49,6 +50,7 @@
 
       # -- Security --
       "1password"                   # Password manager (must be in /Applications for SSH agent)
+      "1password-cli"               # 1Password command-line tool (op)
       "openvpn-connect"             # OpenVPN client
       "shadowsocksx-ng"             # ShadowsocksX-NG proxy
       "yubico-authenticator"        # YubiKey Authenticator
@@ -87,6 +89,7 @@
       "ansible"                   # Configuration management / automation
       "awscli"                    # AWS CLI v2
       "azure-cli"                 # Azure CLI
+
       "kubelogin"                 # Azure K8s credential plugin
       "checkov"                   # IaC static analysis / security scanner
       "opentofu"                  # Open-source Terraform alternative
@@ -135,7 +138,7 @@
       "trufflehog"               # Secret scanner
       # "mongosh"                 # MongoDB shell
       # "renovate"                # Automated dependency updates
-      # "yq"                      # YAML/JSON/XML processor
+      "yq"                        # YAML/JSON/XML processor
       # "gitversion"              # Easy semantic versioning for projects using Git
     ];
   };
