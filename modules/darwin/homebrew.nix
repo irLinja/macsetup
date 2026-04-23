@@ -89,6 +89,7 @@
       "ansible"                   # Configuration management / automation
       "awscli"                    # AWS CLI v2
       "azure-cli"                 # Azure CLI
+      "googleworkspace-cli"       # CLI for Drive, Gmail, Calendar, Sheets, Docs, Chat, Admin
 
       "kubelogin"                 # Azure K8s credential plugin
       "checkov"                   # IaC static analysis / security scanner

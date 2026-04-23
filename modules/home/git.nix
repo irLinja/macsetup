@@ -43,7 +43,7 @@
         name = userConfig.fullName;
         email = userConfig.email;
       };
-      init.defaultBranch = "main";
+      init.defaultBranch = "master";
       core = {
         editor = "vim";
         ignorecase = false;
@@ -57,7 +57,7 @@
         gpgsign = true;
       };
       gpg.ssh.allowedSignersFile = lib.mkIf (userConfig.git.signing.key != null) "~/.ssh/allowed_signers";
-      url."https://github.com/".insteadOf = "ssh://git@github.com/";
+      url."ssh://git@github.com/".insteadOf = "https://github.com/";
     };
   };
 }
