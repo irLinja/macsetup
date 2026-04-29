@@ -1,4 +1,4 @@
-# 1Password integration -- opt-in via user.nix features.onePassword = true
+# 1Password integration -- opt-in via user.nix features."1password" = true
 #
 # When enabled:
 # - Installs 1Password and 1Password for Safari via Homebrew
@@ -8,7 +8,7 @@
 # for SSH agent and browser integration.
 { userConfig, lib, ... }:
 let
-  enabled = userConfig.features.onePassword or false;
+  enabled = userConfig.features."1password" or false;
 in {
   # 1Password cask (only when enabled)
   homebrew.casks = lib.mkIf enabled [ "1password" ];

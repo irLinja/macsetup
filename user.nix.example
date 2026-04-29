@@ -23,6 +23,6 @@
 
   # Feature toggles
   features = {
-    onePassword = false;           # Enable 1Password + SSH agent + git signing integration
+    "1password" = false;           # Enable 1Password + SSH agent + git signing integration
   };
 }

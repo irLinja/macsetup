@@ -72,7 +72,7 @@ Personal data flows from `user.nix` through the entire module tree:
 2. `specialArgs = { inherit inputs userConfig; }` passes it to all darwin modules
 3. `home-manager.extraSpecialArgs = { inherit inputs userConfig; }` passes it to all Home Manager modules
 4. Every module receives `{ userConfig, ... }` and uses `userConfig.username`, `userConfig.email`, etc.
-5. Optional features use `lib.mkIf userConfig.features.onePassword` guards
+5. Optional features use `lib.mkIf userConfig.features."1password"` guards
 
 ## User Configuration
 
@@ -100,7 +100,7 @@ The `macsetup rebuild` command automatically stages `user.nix` before each build
   };
 
   features = {
-    onePassword = false;     # Enable 1Password SSH agent + git signing
+    "1password" = false;     # Enable 1Password SSH agent + git signing
   };
 }
 ```
@@ -167,7 +167,7 @@ Host configs import a profile and can override any setting with `lib.mkForce` or
 
 - Must be installed via **Homebrew cask** (not NixCasks) -- requires `/Applications/` for SSH agent and browser integration
 - Git SSH signing path: `/Applications/1Password.app/Contents/MacOS/op-ssh-sign` (configured via `userConfig.git.signing.signer`)
-- Enabled via `userConfig.features.onePassword = true` in `user.nix`
+- Enabled via `userConfig.features."1password" = true` in `user.nix`
 - Integration module: `modules/optional/1password.nix`
 
 ## Pitfalls

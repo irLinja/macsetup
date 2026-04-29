@@ -120,12 +120,12 @@ generate_user_config() {
   echo ""
 
   # Ask about 1Password integration
-  local one_password="false"
+  local onepass="false"
   local signer="null"
   read -p "  Enable 1Password SSH agent + git signing? [y/N] " -n 1 -r op_reply
   echo ""
   if [[ "$op_reply" =~ ^[Yy]$ ]]; then
-    one_password="true"
+    onepass="true"
     signer='"\/Applications\/1Password.app\/Contents\/MacOS\/op-ssh-sign"'
   fi
 
@@ -140,7 +140,7 @@ generate_user_config() {
     sign_by_default="true"
     allowed_signers="\"$email $signing_key_input\""
     # If 1Password was enabled, set the signer path (unescaped for sed)
-    if [ "$one_password" = "true" ]; then
+    if [ "$onepass" = "true" ]; then
       signer='"\/Applications\/1Password.app\/Contents\/MacOS\/op-ssh-sign"'
     fi
   fi
@@ -157,7 +157,7 @@ generate_user_config() {
     -e "s/signByDefault = false/signByDefault = $sign_by_default/" \
     -e "s/signer = null;.*# Path to signing tool/signer = $signer;               # Path to signing tool/" \
     -e "s/allowedSigners = null;.*# \"email ssh-type/allowedSigners = $allowed_signers;         # \"email ssh-type/" \
-    -e "s/onePassword = false/onePassword = $one_password/" \
+    -e "s/\"1password\" = false/\"1password\" = $onepass/" \
     "$template" > "$REPO_DIR/user.nix"
 
   # Stage user.nix so the Nix flake can see it (flakes ignore unstaged files)
