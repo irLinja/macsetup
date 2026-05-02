@@ -31,7 +31,7 @@
       "visual-studio-code"          # Code editor
 
       # -- Productivity --
-      "linear-linear"               # Linear issue tracker desktop app
+      "linear"                      # Linear issue tracker desktop app
       "microsoft-outlook"           # Microsoft Outlook email client
       "microsoft-teams"             # Microsoft Teams communication
       "miro"                        # Miro collaborative whiteboard

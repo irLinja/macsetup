@@ -68,6 +68,13 @@
       window-padding-x = 4
       window-padding-y = 4
       confirm-close-surface = false
+
+      # Shell integration: auto-detect shell and inject features.
+      # https://ghostty.org/docs/features/shell-integration
+      shell-integration = detect
+
+      # SSH integration: forward TERM/env to remote and install terminfo over SSH.
+      shell-integration-features = ssh-env,ssh-terminfo
     '';
   };
 }
