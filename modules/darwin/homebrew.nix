@@ -24,6 +24,7 @@
       "claude"                      # Claude Desktop
 
       # -- Development --
+      "dbeaver-community"           # Universal database GUI client
       "gcloud-cli"                  # Google Cloud CLI (gcloud, gsutil, bq)
       "ghostty"                     # GPU-accelerated terminal emulator
       "headlamp"                    # Kubernetes web UI
@@ -115,6 +116,7 @@
       "container"                 # Apple Containers CLI
 
       # -- Tap Packages --
+      "ariga/tap/atlas"           # Atlas database schema migration tool
       "peonping/tap/peon-ping"    # Sound effects and desktop notifications for AI coding agents
       "tfversion/tap/tfversion"   # Manage Terraform versions
 

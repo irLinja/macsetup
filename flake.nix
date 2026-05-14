@@ -43,6 +43,10 @@
       url = "github:TheBoredTeam/homebrew-boring-notch";
       flake = false;
     };
+    homebrew-ariga = {
+      url = "github:ariga/homebrew-tap";
+      flake = false;
+    };
 
     # mac-app-util.url = "github:hraban/mac-app-util";
 

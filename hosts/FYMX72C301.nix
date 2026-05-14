@@ -36,6 +36,7 @@ in {
       "peonping/homebrew-tap" = inputs.homebrew-peonping;
       "tfversion/homebrew-tap" = inputs.homebrew-tfversion;
       "theboredteam/homebrew-boring-notch" = inputs.homebrew-boredteam;
+      "ariga/homebrew-tap" = inputs.homebrew-ariga;
     };
   };
 
