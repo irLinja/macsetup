@@ -560,7 +560,6 @@ com.apple.dock|minimize-to-application|1|dock.minimize-to-application = true
 NSGlobalDomain|KeyRepeat|5|NSGlobalDomain.KeyRepeat = 5
 NSGlobalDomain|InitialKeyRepeat|30|NSGlobalDomain.InitialKeyRepeat = 30
 NSGlobalDomain|AppleInterfaceStyleSwitchesAutomatically|1|NSGlobalDomain.AppleInterfaceStyleSwitchesAutomatically = true
-com.apple.AppleMultitouchTrackpad|Clicking|1|trackpad.Clicking = true
 CHECKS
 }
 
