@@ -115,6 +115,13 @@
       # -- Containers --
       "container"                 # Apple Containers CLI
 
+      # -- Linting & Code Generation --
+      "actionlint"                # GitHub Actions workflow linter
+      "golangci-lint"             # Go linter aggregator
+      "shellcheck"                # Shell script linter
+      "sqlc"                      # Generate type-safe code from SQL
+      "yamllint"                  # YAML linter
+
       # -- Tap Packages --
       "ariga/tap/atlas"           # Atlas database schema migration tool
       "peonping/tap/peon-ping"    # Sound effects and desktop notifications for AI coding agents
@@ -136,7 +143,6 @@
       # "popeye"                  # K8s cluster resource sanitizer
       # "krr"                     # K8s Resource Recommender by Robusta
       # "skopeo"                  # Container image operations
-      # "shellcheck"              # Shell script linter
       "trivy"                    # Container/IaC vulnerability scanner
       "trufflehog"               # Secret scanner
       # "mongosh"                 # MongoDB shell
