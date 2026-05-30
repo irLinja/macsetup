@@ -29,6 +29,7 @@
       "ghostty"                     # GPU-accelerated terminal emulator
       "headlamp"                    # Kubernetes web UI
       "rancher"                     # Rancher Desktop (container management)
+      "temurin@25"                  # Eclipse Temurin JDK 25 (Adoptium)
       "visual-studio-code"          # Code editor
 
       # -- Productivity --
@@ -114,6 +115,9 @@
 
       # -- Containers --
       "container"                 # Apple Containers CLI
+
+      # -- Languages & Build Tools --
+      "gradle"                    # JVM build automation tool (Groovy/Kotlin DSL)
 
       # -- Linting & Code Generation --
       "actionlint"                # GitHub Actions workflow linter
