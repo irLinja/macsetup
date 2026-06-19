@@ -1,11 +1,36 @@
 { ... }: {
+  # Homebrew 6.0 makes tap-trust checks the default (HOMEBREW_REQUIRE_TAP_TRUST),
+  # refusing to load formulae/casks from non-official taps until `brew trust` has
+  # been run interactively. That breaks `brew bundle` during activation for our
+  # third-party taps (ariga, peonping, tfversion, theboredteam) -- e.g.
+  # "Refusing to load formula ariga/tap/atlas from untrusted tap ariga/tap".
+  #
+  # Those taps are pinned flake inputs managed by nix-homebrew with
+  # `mutableTaps = false`, so their provenance is already locked and an
+  # interactive per-tap trust prompt is redundant friction. Disable the
+  # requirement via Homebrew's system-wide env file.
+  #
+  # /etc/homebrew/brew.env is sourced first by `brew` (before the prefix/user env
+  # files) and is materialised by nix-darwin's /etc activation BEFORE the Homebrew
+  # bundle step, so it takes effect on the first rebuild and on fresh machines.
+  # (A Home Manager file would be written only AFTER `brew bundle` runs -- too
+  # late, and the bundle failure aborts activation under `set -e`.)
+  environment.etc."homebrew/brew.env".text = ''
+    HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+  '';
+
   homebrew = {
     enable = true;
 
     onActivation = {
       autoUpdate = true;
       upgrade = true;
-      cleanup = "zap";  # Removes any formulae/casks/mas apps not declared in config
+      # Homebrew 6.0 deprecated `brew bundle --cleanup` (used by "zap"/"uninstall")
+      # and made it a dry-run no-op. "check" uses the modern `brew bundle cleanup`
+      # subcommand instead: no deprecation warning, and it FAILS activation when
+      # undeclared formulae/casks/mas apps exist (it does not auto-remove them).
+      # Prune the reported items with `brew bundle cleanup --force`.
+      cleanup = "check";
     };
 
     # Tap sources are managed by nix-homebrew (hosts/shared.nix).
@@ -115,6 +140,9 @@
 
       # -- Containers --
       "container"                 # Apple Containers CLI
+
+      # -- Git / VCS --
+      "glab"                      # GitLab CLI
 
       # -- Languages & Build Tools --
       "gradle"                    # JVM build automation tool (Groovy/Kotlin DSL)

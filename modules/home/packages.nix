@@ -3,6 +3,7 @@
     # -- Development Languages & Runtimes --
     nodejs            # Node.js runtime (required by pnpm)
     pnpm              # Fast Node.js package manager
+    bun               # Fast JS runtime + package manager (provides bun & bunx)
     uv                # Fast Python package/project manager
 
     # -- CLI Utilities --

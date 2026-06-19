@@ -4,6 +4,7 @@
       # Development
       nodejs
       pnpm
+      bun
       uv
       neovim
       hugo
