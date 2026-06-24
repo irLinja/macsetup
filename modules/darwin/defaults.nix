@@ -124,6 +124,15 @@ in
       codesign --force --deep --sign - "/Applications/YouTube Music Desktop App.app" 2>/dev/null || true
     fi
 
+    # kotlin-lsp (JetBrains Kotlin Language Server) is a CLI cask under
+    # /opt/homebrew/Caskroom, not an .app. It ships signed but unnotarized,
+    # so Gatekeeper blocks bin/intellij-server on first launch ("could not
+    # verify ... free of malware") whenever Homebrew re-adds the quarantine
+    # bit on (re)install or upgrade. Strip it from the whole versioned tree.
+    if [[ -d /opt/homebrew/Caskroom/kotlin-lsp ]]; then
+      xattr -dr com.apple.quarantine /opt/homebrew/Caskroom/kotlin-lsp 2>/dev/null || true
+    fi
+
     # Clean up dangling symlinks in Homebrew's zsh completions directory
     # (stale _brew, _brew_cask, or formula leftovers cause compinit errors)
     if [[ -d /opt/homebrew/share/zsh/site-functions ]]; then

@@ -6,6 +6,9 @@
     bun               # Fast JS runtime + package manager (provides bun & bunx)
     uv                # Fast Python package/project manager
 
+    # -- Language Servers (LSP) --
+    typescript-language-server  # LSP for JavaScript/TypeScript (tsserver bundled)
+
     # -- CLI Utilities --
     jq                # JSON processor
     ripgrep           # Fast regex search (rg)

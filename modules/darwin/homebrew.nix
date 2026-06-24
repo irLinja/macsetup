@@ -53,6 +53,7 @@
       "gcloud-cli"                  # Google Cloud CLI (gcloud, gsutil, bq)
       "ghostty"                     # GPU-accelerated terminal emulator
       "headlamp"                    # Kubernetes web UI
+      "kotlin-lsp"                  # Official Kotlin Language Server (JetBrains; needs JDK -> temurin@25)
       "rancher"                     # Rancher Desktop (container management)
       "temurin@25"                  # Eclipse Temurin JDK 25 (Adoptium)
       "visual-studio-code"          # Code editor
