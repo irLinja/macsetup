@@ -41,6 +41,7 @@
       "tfversion/homebrew-tap" = inputs.homebrew-tfversion;
       "theboredteam/homebrew-boring-notch" = inputs.homebrew-boredteam;
       "ariga/homebrew-tap" = inputs.homebrew-ariga;
+      "fluxcd/homebrew-tap" = inputs.homebrew-fluxcd;
     };
   };
 

@@ -24,11 +24,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1782233665,
-        "narHash": "sha256-h/xOtrByoA/Ak1lWHn0O1lVZz4qWYbwOSLQ8YSwQO0I=",
+        "lastModified": 1783024095,
+        "narHash": "sha256-oE+TNK98Pl7nHW4VU1oBvUKD5JR45U+py/NJmLoTNHI=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "062581938b4a378a82dfbb294b494808157153a1",
+        "rev": "a4d410db95a6416d1008049330bd86b85b5db45a",
         "type": "github"
       },
       "original": {
@@ -57,11 +57,11 @@
     "homebrew-boredteam": {
       "flake": false,
       "locked": {
-        "lastModified": 1781726392,
-        "narHash": "sha256-FsGnzS3GygdHpOsFqTXUamoJDV5skD2Zb7IjSV6jaTY=",
+        "lastModified": 1782631121,
+        "narHash": "sha256-32ZXrwMQkSAw6siCCr7eamf+P2Opv0mCW/n8ot9TXtc=",
         "owner": "TheBoredTeam",
         "repo": "homebrew-boring-notch",
-        "rev": "068e7a5d4464762bfe7befdfe03781243369f885",
+        "rev": "79fde426c1f48d9464b0c9cba0389df15fba3a88",
         "type": "github"
       },
       "original": {
@@ -73,11 +73,11 @@
     "homebrew-cask": {
       "flake": false,
       "locked": {
-        "lastModified": 1782302282,
-        "narHash": "sha256-GgAdA6XodEi3UKZ5FfIT0cSoov0ePZgDET76sUSYqNk=",
+        "lastModified": 1783079827,
+        "narHash": "sha256-L+QcBmEN0hdwrodJ5Uff2zVW2ZIq40yOXW6xL4492eM=",
         "owner": "homebrew",
         "repo": "homebrew-cask",
-        "rev": "b7ac10b4edae20a0a71a1f8447300fb19669c52a",
+        "rev": "80a5a925af34d213b75205f3026c52dae503ee00",
         "type": "github"
       },
       "original": {
@@ -89,11 +89,11 @@
     "homebrew-core": {
       "flake": false,
       "locked": {
-        "lastModified": 1782305015,
-        "narHash": "sha256-lhw6QcWkPIYlOvOwBIyMxj2HAG31iiOy/XvW+pExtQs=",
+        "lastModified": 1783075729,
+        "narHash": "sha256-/si5H5ebBm+B93NO/VOdX3J71r2XzOnLidDfx6Do2ac=",
         "owner": "homebrew",
         "repo": "homebrew-core",
-        "rev": "f3428d87f61dee5be3b64b1eb5972853cebb5248",
+        "rev": "f6e4d405da33b5cfbebc43287ff270a5432a2da5",
         "type": "github"
       },
       "original": {
@@ -102,14 +102,30 @@
         "type": "github"
       }
     },
+    "homebrew-fluxcd": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1782834491,
+        "narHash": "sha256-A+KfCibElE4LaSPYuTJbrRE6bCwmCJfDGM8BZ0onhh4=",
+        "owner": "fluxcd",
+        "repo": "homebrew-tap",
+        "rev": "369f2f4cea1f89053cd1bd4b980447d335e2e451",
+        "type": "github"
+      },
+      "original": {
+        "owner": "fluxcd",
+        "repo": "homebrew-tap",
+        "type": "github"
+      }
+    },
     "homebrew-peonping": {
       "flake": false,
       "locked": {
-        "lastModified": 1782185825,
-        "narHash": "sha256-D+DrMpuRZHfvWalUxj/logY8Y4GHNY6VQG46cXg3+EI=",
+        "lastModified": 1782968232,
+        "narHash": "sha256-XnmKImbR1U8oFbq0MJhUQ87y1IEG4W4jIAjVmj6S7lg=",
         "owner": "PeonPing",
         "repo": "homebrew-tap",
-        "rev": "466729826243384b3d16ab90eb50a408ea319c19",
+        "rev": "5d34e173bc066b0b0c4db9c75aa344acb63f00d3",
         "type": "github"
       },
       "original": {
@@ -175,11 +191,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1782118813,
-        "narHash": "sha256-BnbXO5s5EhV89lLXMAGCzPdEN5a6vNqvMk71obeTEUw=",
+        "lastModified": 1782918843,
+        "narHash": "sha256-ETYnV9U7Sr+A45dohzZdfCZKOss4qrTkO+wgNZNvEc0=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "b3c092d3c36d91e2f61f3dfb39a159f180a56659",
+        "rev": "e8273b29fe1390ec8d4603f2477357555291432e",
         "type": "github"
       },
       "original": {
@@ -196,6 +212,7 @@
         "homebrew-boredteam": "homebrew-boredteam",
         "homebrew-cask": "homebrew-cask",
         "homebrew-core": "homebrew-core",
+        "homebrew-fluxcd": "homebrew-fluxcd",
         "homebrew-peonping": "homebrew-peonping",
         "homebrew-tfversion": "homebrew-tfversion",
         "nix-darwin": "nix-darwin",

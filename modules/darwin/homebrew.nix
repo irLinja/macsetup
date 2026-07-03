@@ -49,6 +49,7 @@
       "claude"                      # Claude Desktop
 
       # -- Development --
+      "bruno"                       # Open-source API client (Postman alternative)
       "dbeaver-community"           # Universal database GUI client
       "gcloud-cli"                  # Google Cloud CLI (gcloud, gsutil, bq)
       "ghostty"                     # GPU-accelerated terminal emulator
@@ -128,19 +129,26 @@
       "tflint"                    # Terraform linter
 
       # -- Kubernetes --
+      "cilium-cli"                # Cilium CNI CLI
       "helm"                      # Helm package manager for K8s
+      "hubble"                    # Cilium network observability
       "k8sgpt"                    # AI-powered K8s diagnostics
       "k9s"                       # Terminal UI for K8s clusters
       "kind"                      # Kubernetes in Docker (local clusters)
       "kubebuilder"               # K8s operator SDK
+      "kubeconform"               # K8s manifest schema validator
       "kubernetes-cli"             # kubectl - Kubernetes CLI
       "kubectl-ai"                # AI-powered Kubernetes assistant
       "kubectx"                   # Switch kubectl contexts/namespaces
+      "kubescape"                 # K8s security scanner
+      "kyverno"                   # K8s policy engine CLI
+      "popeye"                    # K8s cluster resource sanitizer
       "stern"                     # Multi-pod log tailing for K8s
       "watch"                     # Execute a program periodically
 
       # -- Containers --
       "container"                 # Apple Containers CLI
+      "crane"                     # Container image copy/inspect tool
 
       # -- Git / VCS --
       "glab"                      # GitLab CLI
@@ -157,6 +165,7 @@
 
       # -- Tap Packages --
       "ariga/tap/atlas"           # Atlas database schema migration tool
+      "fluxcd/tap/flux"           # FluxCD GitOps toolkit CLI for K8s (tap-only, not in core)
       "peonping/tap/peon-ping"    # Sound effects and desktop notifications for AI coding agents
       "tfversion/tap/tfversion"   # Manage Terraform versions
 
@@ -165,15 +174,9 @@
       # "powerpipe"               # DevOps dashboards / cloud visualization
       # "steampipe"               # APIs as SQL / cloud querying
       # "terraformer"             # Generate Terraform from existing infrastructure
-      # "cilium-cli"              # Cilium CNI CLI
       # "clusterctl"              # Cluster API management tool
-      # "fluxcd"                  # GitOps toolkit for K8s
-      # "hubble"                  # Cilium network observability
       # "istioctl"                # Istio service mesh CLI
       # "kubent"                  # K8s API deprecation checker
-      # "kubescape"               # K8s security scanner
-      # "kyverno"                 # K8s policy engine CLI
-      # "popeye"                  # K8s cluster resource sanitizer
       # "krr"                     # K8s Resource Recommender by Robusta
       # "skopeo"                  # Container image operations
       "trivy"                    # Container/IaC vulnerability scanner

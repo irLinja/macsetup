@@ -47,6 +47,10 @@
       url = "github:ariga/homebrew-tap";
       flake = false;
     };
+    homebrew-fluxcd = {
+      url = "github:fluxcd/homebrew-tap";
+      flake = false;
+    };
 
     # mac-app-util.url = "github:hraban/mac-app-util";
 
