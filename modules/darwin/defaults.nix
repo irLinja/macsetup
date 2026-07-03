@@ -105,8 +105,16 @@ in
   # Runs after all activation steps (including Homebrew cask installs).
   # killall Dock refreshes icons so persistent-apps resolve correctly
   # even on first run when casks are installed during this same switch.
+  #
+  # Do NOT add `activateSettings -u` here. It re-applies preference state
+  # out-of-band (and as root, since activation lost its user context) and
+  # kills Magic Mouse smart zoom on every switch until the setting is
+  # toggled in System Settings — same improper-handshake failure mode as
+  # the CustomUserPreferences mouse writes removed in 75d3d7f/d4fbc6e
+  # (confirmed by isolated repro, 2026-07-03). Nothing declared here needs
+  # it: cfprefsd serves new values to newly launched processes, and
+  # loginwindow reads its domain at next login.
   system.activationScripts.postActivation.text = ''
-    /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
     killall Dock 2>/dev/null || true
 
     # Strip quarantine flag from casks that fail Gatekeeper checks.

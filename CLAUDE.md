@@ -176,7 +176,7 @@ Host configs import a profile and can override any setting with `lib.mkForce` or
 - `user.nix` must be staged with `git add -f user.nix` for flake visibility (the CLI does this automatically)
 - After editing `user.nix`, run `macsetup rebuild` (auto-stages) or `git add -f user.nix` manually
 - Existing dotfiles block Home Manager activation -- back up before first run
-- macOS defaults need `activateSettings -u` + `killall Dock/Finder` in post-activation script
+- Never run `activateSettings -u` in activation -- it desyncs Magic Mouse gesture state (smart zoom dies until toggled in System Settings). `killall Dock` after cask installs is all the post-activation refresh needed; other defaults reach new processes via cfprefsd
 - mas requires user to be signed into App Store (not fully unattended)
 - Old `~/.gitconfig` overrides Home Manager's `~/.config/git/config` -- remove it if Home Manager manages git
 - `darwin-rebuild switch --flake .` uses hostname as config name -- use `--flake .#macsetup` explicitly or let the CLI auto-detect
