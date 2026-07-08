@@ -130,6 +130,7 @@
 
       # -- Kubernetes --
       "cilium-cli"                # Cilium CNI CLI
+      "clusterctl"                # Cluster API management CLI
       "helm"                      # Helm package manager for K8s
       "hubble"                    # Cilium network observability
       "k8sgpt"                    # AI-powered K8s diagnostics
@@ -144,6 +145,7 @@
       "kyverno"                   # K8s policy engine CLI
       "popeye"                    # K8s cluster resource sanitizer
       "stern"                     # Multi-pod log tailing for K8s
+      "talosctl"                  # Talos Linux cluster management CLI
       "watch"                     # Execute a program periodically
 
       # -- Containers --
