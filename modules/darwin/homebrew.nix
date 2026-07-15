@@ -158,6 +158,9 @@
       # -- Languages & Build Tools --
       "gradle"                    # JVM build automation tool (Groovy/Kotlin DSL)
 
+      # -- macOS --
+      "terminal-notifier"         # macOS notification CLI -- on brew (bottled), not nixpkgs: cctools ld SIGTRAPs linking it from source on the current nixpkgs pin
+
       # -- Linting & Code Generation --
       "actionlint"                # GitHub Actions workflow linter
       "golangci-lint"             # Go linter aggregator
@@ -167,6 +170,7 @@
 
       # -- Tap Packages --
       "ariga/tap/atlas"           # Atlas database schema migration tool
+      "cloudflare/cloudflare/cf-terraforming"  # Import Cloudflare resources into Terraform/OpenTofu
       "fluxcd/tap/flux"           # FluxCD GitOps toolkit CLI for K8s (tap-only, not in core)
       "peonping/tap/peon-ping"    # Sound effects and desktop notifications for AI coding agents
       "tfversion/tap/tfversion"   # Manage Terraform versions

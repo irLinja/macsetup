@@ -51,6 +51,10 @@
       url = "github:fluxcd/homebrew-tap";
       flake = false;
     };
+    homebrew-cloudflare = {
+      url = "github:cloudflare/homebrew-cloudflare";
+      flake = false;
+    };
 
     # mac-app-util.url = "github:hraban/mac-app-util";
 

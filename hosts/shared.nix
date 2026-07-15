@@ -30,6 +30,7 @@
       "theboredteam/homebrew-boring-notch" = inputs.homebrew-boredteam;
       "ariga/homebrew-tap" = inputs.homebrew-ariga;
       "fluxcd/homebrew-tap" = inputs.homebrew-fluxcd;
+      "cloudflare/homebrew-cloudflare" = inputs.homebrew-cloudflare;
     };
   };
 }

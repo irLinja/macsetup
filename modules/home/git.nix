@@ -31,13 +31,6 @@
       ".apdisk"
     ];
 
-    includes = [
-      {
-        condition = "gitdir:~/Documents/JET/";
-        contents.user.email = "arash.haghighat@justeattakeaway.com";
-      }
-    ];
-
     settings = {
       user = {
         name = userConfig.fullName;

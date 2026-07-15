@@ -180,6 +180,8 @@
     "$HOME/.krew/bin"
     "$HOME/.local/bin"
     "$HOME/.tfversion/bin"
+    "/opt/homebrew/bin"        # Homebrew formula CLIs (talosctl, clusterctl, k9s, kind, ...)
+    "/opt/homebrew/sbin"
     # "$HOME/.rd/bin"          # Rancher Desktop -- prepended via initContent for priority
     # "$HOME/.antigravity/bin" # uncomment if used
   ];

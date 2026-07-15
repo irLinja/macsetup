@@ -12,8 +12,9 @@
     # -- CLI Utilities --
     jq                # JSON processor
     ripgrep           # Fast regex search (rg)
-    terminal-notifier # macOS notification CLI
     zsh-completions   # Additional zsh completion definitions
+    # terminal-notifier -> Homebrew (modules/darwin/homebrew.nix): cctools ld
+    #   SIGTRAP linking it from source on the current nixpkgs pin
 
     # -- Version Control --
     gh                # GitHub CLI

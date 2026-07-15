@@ -15,8 +15,8 @@
       wget
       gh
       pre-commit
-      terminal-notifier
       zsh-completions
+      # terminal-notifier moved to Homebrew (nixpkgs ld crash) -- see modules/darwin/homebrew.nix
 
       # Media
       ffmpeg
