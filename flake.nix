@@ -20,7 +20,18 @@
     #   inputs.nixpkgs.follows = "nixpkgs";
     # };
 
-    nix-homebrew.url = "github:zhaofengli/nix-homebrew";
+    nix-homebrew = {
+      url = "github:zhaofengli/nix-homebrew";
+      inputs.brew-src.follows = "brew-src";
+    };
+
+    # Homebrew itself -- must be new enough for the DSL used by the taps below
+    # (nix-homebrew's own pin can lag); bump this tag when a cask or formula
+    # fails activation as "unreadable: unknown keyword"
+    brew-src = {
+      url = "github:Homebrew/brew/6.0.17";
+      flake = false;
+    };
 
     # Homebrew tap sources (required for mutableTaps = false)
     homebrew-core = {

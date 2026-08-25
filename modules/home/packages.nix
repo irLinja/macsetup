@@ -10,6 +10,7 @@
     typescript-language-server  # LSP for JavaScript/TypeScript (tsserver bundled)
 
     # -- CLI Utilities --
+    bruno-cli         # Bruno API client CLI (bru) -- run collections headless
     jq                # JSON processor
     ripgrep           # Fast regex search (rg)
     zsh-completions   # Additional zsh completion definitions
@@ -19,6 +20,9 @@
     # -- Version Control --
     gh                # GitHub CLI
     pre-commit        # Git hook framework
+
+    # -- Security --
+    osv-scanner       # Google OSV vulnerability scanner for dependencies/lockfiles
 
     # -- Networking --
     wget              # HTTP/FTP downloader

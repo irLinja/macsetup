@@ -25,12 +25,18 @@
     onActivation = {
       autoUpdate = true;
       upgrade = true;
-      # Homebrew 6.0 deprecated `brew bundle --cleanup` (used by "zap"/"uninstall")
-      # and made it a dry-run no-op. "check" uses the modern `brew bundle cleanup`
-      # subcommand instead: no deprecation warning, and it FAILS activation when
-      # undeclared formulae/casks/mas apps exist (it does not auto-remove them).
-      # Prune the reported items with `brew bundle cleanup --force`.
-      cleanup = "check";
+      # "zap": undeclared formulae/casks are REMOVED on every activation (casks
+      # get `brew uninstall --zap`, which wipes their app data too) -- ad-hoc
+      # `brew install`s do not survive a rebuild.
+      #
+      # History: Homebrew 6.0 turned `brew bundle --cleanup` (zap's old
+      # mechanism) into a dry-run no-op, so this was `cleanup = "check"`
+      # (abort-on-undeclared) from 2026-07 to 2026-08. Current nix-darwin
+      # passes `--zap --force-cleanup` instead, which the pinned brew
+      # (>= 6.0.16) executes for real -- verified in both pinned sources.
+      # Taps referenced by Brewfile entries (ariga, fluxcd, ...) are never
+      # untapped; the declared taps below cover the remainder.
+      cleanup = "zap";
     };
 
     # Tap sources are managed by nix-homebrew (hosts/shared.nix).
