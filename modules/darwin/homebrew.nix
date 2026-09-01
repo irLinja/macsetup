@@ -193,7 +193,7 @@
       # "skopeo"                  # Container image operations
       "trivy"                    # Container/IaC vulnerability scanner
       "trufflehog"               # Secret scanner
-      # "mongosh"                 # MongoDB shell
+      # "mongosh"                 # MongoDB shell -- now installed from nixpkgs (modules/home/packages.nix)
       # "renovate"                # Automated dependency updates
       "yq"                        # YAML/JSON/XML processor
       # "gitversion"              # Easy semantic versioning for projects using Git

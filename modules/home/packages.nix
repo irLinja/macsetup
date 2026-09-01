@@ -24,6 +24,10 @@
     # -- Security --
     osv-scanner       # Google OSV vulnerability scanner for dependencies/lockfiles
 
+    # -- Databases --
+    postgresql        # PostgreSQL client (psql, pg_dump) + server binaries
+    mongosh           # MongoDB shell
+
     # -- Networking --
     wget              # HTTP/FTP downloader
 
