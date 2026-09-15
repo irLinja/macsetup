@@ -180,6 +180,7 @@ Host configs import a profile and can override any setting with `lib.mkForce` or
 - mas requires user to be signed into App Store (not fully unattended)
 - Old `~/.gitconfig` overrides Home Manager's `~/.config/git/config` -- remove it if Home Manager manages git
 - `darwin-rebuild switch --flake .` uses hostname as config name -- use `--flake .#macsetup` explicitly or let the CLI auto-detect
+- `brew bundle` warning `Formulae dependency graph sorting found a circular dependency: libtiff, webp` on every activation is harmless but never self-heals -- an installed keg's `INSTALL_RECEIPT.json` still lists a dependency homebrew-core has since dropped (receipts are baked into bottles at build time; `brew bundle` only re-pours outdated versions). Fix: compare each named keg's receipt `runtime_dependencies` with the tap formula's `depends_on` and `brew reinstall` the stale one (`brew reinstall webp` fixed the 2026-09 case after homebrew-core flipped the webp/libtiff dependency). Only works once a bottle built after the change exists for this Mac's OS tag. Skip the suggested `brew update` (taps are flake inputs -- `macsetup update` is the equivalent) and expect `brew reinstall` to also upgrade the keg's outdated dependents unless `HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1` is set
 
 ## Repository
 
