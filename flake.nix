@@ -27,9 +27,16 @@
 
     # Homebrew itself -- must be new enough for the DSL used by the taps below
     # (nix-homebrew's own pin can lag); bump this tag when a cask or formula
-    # fails activation as "unreadable: unknown keyword"
+    # fails activation as "unreadable: unknown keyword".
+    #
+    # Keep this in step with nix-homebrew's own brew-src pin: nix-homebrew
+    # vendors a copy of brew's bin/brew tail, so a mismatch breaks activation.
+    # 2026-09-22: nix-homebrew e0fdde28 regenerated that tail from brew 7.0.4,
+    # which dropped HOMEBREW_ORIGINAL_BREW_FILE; brew 6.0.17's startup/config.rb
+    # still did ENV.fetch on it, so every Ruby-backed brew command died with
+    # `key not found: "HOMEBREW_ORIGINAL_BREW_FILE" (KeyError)`. 6.0.17 -> 7.0.4.
     brew-src = {
-      url = "github:Homebrew/brew/6.0.17";
+      url = "github:Homebrew/brew/7.0.4";
       flake = false;
     };
 
