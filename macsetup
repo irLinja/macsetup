@@ -3,8 +3,10 @@
 #
 # Usage: macsetup <command> [args]
 #
-# Wraps darwin-rebuild with automatic generation management.
-# Keeps the last 3 generations after every mutating operation.
+# Wraps darwin-rebuild with automatic generation management and a fail-safe
+# update pipeline. Keeps the last 3 generations after every mutating operation.
+#
+# Must stay /bin/bash (3.2) compatible: `macsetup bootstrap` runs on a bare Mac.
 
 set -euo pipefail
 
@@ -22,20 +24,103 @@ if [ ! -f "$REPO_ROOT/flake.nix" ]; then
   exit 1
 fi
 
+# Determinate Nix releases before this one poll the daemon socket with
+# select(), which macOS rejects with EINVAL once a file-descriptor number
+# reaches 1024 -- the "polling file descriptor: Invalid argument" failure that
+# kills rebuilds at random. Nix raises its own fd limit, so any large
+# evaluation can trip it. 3.22.0 switched to poll().
+DETERMINATE_NIX_MIN_OK="3.22.0"
+
 # ---------------------------------------------------------------------------
-# Helper functions
+# Output helpers
 # ---------------------------------------------------------------------------
 
 info() {
   echo "==> $*"
 }
 
+warn() {
+  echo "WARNING: $*" >&2
+}
+
 error() {
-  echo ""
-  echo "ERROR: $*"
-  echo ""
+  echo "" >&2
+  echo "ERROR: $*" >&2
+  echo "" >&2
   exit 1
 }
+
+# ---------------------------------------------------------------------------
+# Pure helpers (unit-tested by scripts/test-macsetup.sh)
+# ---------------------------------------------------------------------------
+
+# lock_diff OLD NEW -- print "input: oldrev -> newrev" for every input whose
+# locked revision differs between two flake.lock files, sorted by input name.
+lock_diff() {
+  jq -r --slurpfile old "$1" '
+    ($old[0].nodes) as $o
+    | .nodes | to_entries[]
+    | select((.value.locked.rev? // null) != null)
+    | select(($o[.key].locked.rev? // null) != .value.locked.rev)
+    | "\(.key): \(($o[.key].locked.rev? // "(new)")[:7]) -> \(.value.locked.rev[:7])"
+  ' "$2" | sort
+}
+
+# dry_run_local_builds FILE -- from `nix build --dry-run` output, print the
+# packages that would be compiled locally (no binary-cache hit). Glue
+# derivations from nix-darwin / Home Manager (etc files, activation scripts,
+# ...) carry no version number and are skipped, as is nix-homebrew's brew
+# patch step, which is always local and trivial.
+dry_run_local_builds() {
+  awk '
+    /will be built:?[[:space:]]*$/ { building = 1; next }
+    /will be fetched/              { building = 0 }
+    building && /^[[:space:]]*\/nix\/store\// {
+      name = $1
+      sub(/^\/nix\/store\/[a-z0-9]+-/, "", name)
+      sub(/\.drv$/, "", name)
+      print name
+    }
+  ' "$1" \
+    | grep -E -- '-[0-9]' \
+    | grep -v -E '^(darwin-system-|etc-|hm_|hm-|brew-[0-9][^ ]*-patched$)' \
+    || true
+}
+
+# heavy_builds -- filter stdin (one package per line) down to the toolchains
+# and runtimes that take hours to compile on a laptop and that nixpkgs
+# normally serves prebuilt. Seeing one means the binary cache has not caught
+# up with the new nixpkgs pin yet.
+heavy_builds() {
+  grep -E '^(dotnet-|llvm-[0-9]|clang-[0-9]|gcc-[0-9]|rustc-[0-9]|cargo-[0-9]|go-[0-9]|nodejs-[0-9]|python3-[0-9]|openjdk-[0-9]|ghc-[0-9]|swift-[0-9]|qtbase-[0-9]|webkitgtk-[0-9]|chromium-[0-9]|electron-[0-9]|texlive-|boost-[0-9])' \
+    || true
+}
+
+# is_transient_nix_error LOG -- true when the log shows the Determinate Nix
+# < 3.22 daemon-socket bug rather than a real evaluation/build failure.
+is_transient_nix_error() {
+  grep -q 'polling file descriptor: Invalid argument' "$1" 2>/dev/null
+}
+
+# version_lt A B -- true when dotted version A sorts before B.
+version_lt() {
+  [ "$1" != "$2" ] \
+    && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" = "$1" ]
+}
+
+# parse_determinate_versions FILE -- from `determinate-nixd version` output,
+# print "<daemon> <latest>"; latest falls back to daemon when none is advertised.
+parse_determinate_versions() {
+  local daemon latest
+  daemon="$(sed -n 's/^Determinate Nixd daemon version: *//p' "$1" | head -n1)"
+  latest="$(sed -n 's/^Latest version: *//p' "$1" | head -n1)"
+  [ -n "$daemon" ] || return 1
+  echo "$daemon ${latest:-$daemon}"
+}
+
+# ---------------------------------------------------------------------------
+# Repo helpers
+# ---------------------------------------------------------------------------
 
 gc() {
   sudo nix-env -p /nix/var/nix/profiles/system --delete-generations +3 2>/dev/null
@@ -62,6 +147,193 @@ stage_user_nix() {
   fi
 }
 
+# nix flake update, authenticated against GitHub when gh is logged in, so the
+# dozen github: inputs do not exhaust the 60/hour anonymous API limit after a
+# couple of retries.
+flake_update() {
+  local token=""
+  if command -v gh >/dev/null 2>&1; then
+    token="$(gh auth token 2>/dev/null || true)"
+  fi
+  if [ -n "$token" ]; then
+    NIX_CONFIG="access-tokens = github.com=$token
+${NIX_CONFIG:-}" nix flake update "$@"
+  else
+    nix flake update "$@"
+  fi
+}
+
+# restore_lock WORKDIR -- put the pre-update flake.lock back, keeping the
+# rejected one next to it for bisecting.
+restore_lock() {
+  cp "$REPO_ROOT/flake.lock" "$1/flake.lock.after"
+  cp "$1/flake.lock.before" "$REPO_ROOT/flake.lock"
+  warn "flake.lock restored to the previous pins; the rejected lock is at $1/flake.lock.after"
+}
+
+# ---------------------------------------------------------------------------
+# sudo handling
+# ---------------------------------------------------------------------------
+
+SUDO_KEEPALIVE_PID=""
+
+# Prompt for the password once, right away, and keep the ticket alive so a
+# long build never ends in a second prompt that nobody is there to answer.
+sudo_start() {
+  sudo -v || error "sudo authentication failed"
+  ( while sleep 60; do sudo -n -v 2>/dev/null || exit 0; done ) &
+  SUDO_KEEPALIVE_PID=$!
+}
+
+sudo_stop() {
+  if [ -n "$SUDO_KEEPALIVE_PID" ]; then
+    kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+    SUDO_KEEPALIVE_PID=""
+  fi
+}
+
+trap sudo_stop EXIT
+
+# ---------------------------------------------------------------------------
+# Running nix with a log and a retry for the known transient failure
+# ---------------------------------------------------------------------------
+
+# run_logged MODE LOG CMD... -- run CMD, capturing all output to LOG.
+#   tty:   CMD runs on a pseudo-terminal, so nix keeps its progress bar.
+#   quiet: output goes to LOG only (the last lines are shown on failure).
+# When the failure is the transient daemon-socket bug, the command is retried.
+run_logged() {
+  local mode="$1" log="$2"
+  shift 2
+  local attempt ok
+  for attempt in 1 2 3; do
+    ok=true
+    case "$mode" in
+      tty)   script -q -t 0 "$log" "$@" || ok=false ;;
+      quiet) "$@" >"$log" 2>&1 || ok=false ;;
+    esac
+    if [ "$ok" = true ]; then
+      return 0
+    fi
+    if [ "$attempt" -lt 3 ] && is_transient_nix_error "$log"; then
+      warn "Nix hit the transient daemon-socket bug (attempt $attempt of 3); retrying..."
+      warn "Permanent fix: sudo determinate-nixd upgrade   (fixed in Determinate Nix $DETERMINATE_NIX_MIN_OK)"
+      continue
+    fi
+    if [ "$mode" = quiet ]; then
+      tail -n 30 "$log" >&2
+    fi
+    return 1
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Preflight checks
+# ---------------------------------------------------------------------------
+
+# Warn when Determinate Nix is behind; fail (after warning) when it still has
+# the daemon-socket bug that aborts rebuilds at random.
+check_determinate_nix() {
+  command -v determinate-nixd >/dev/null 2>&1 || return 0
+  local tmp versions daemon latest
+  tmp="$(mktemp)"
+  determinate-nixd version >"$tmp" 2>/dev/null || true
+  versions="$(parse_determinate_versions "$tmp" || true)"
+  rm -f "$tmp"
+  [ -n "$versions" ] || return 0
+  daemon="${versions%% *}"
+  latest="${versions##* }"
+  if version_lt "$daemon" "$DETERMINATE_NIX_MIN_OK"; then
+    warn "Determinate Nix $daemon can abort any rebuild with 'polling file descriptor: Invalid argument'"
+    warn "(select() on a file descriptor >= 1024; fixed in $DETERMINATE_NIX_MIN_OK). Upgrade with:"
+    warn "    sudo determinate-nixd upgrade"
+    return 1
+  fi
+  if version_lt "$daemon" "$latest"; then
+    warn "Determinate Nix $daemon is behind the latest release ($latest): sudo determinate-nixd upgrade"
+  fi
+  return 0
+}
+
+# nix-homebrew vendors part of Homebrew's own bin/brew from the release it
+# pins, while flake.nix overrides that pin (brew-src) so the taps' DSL can be
+# newer than nix-homebrew's lag. The two must agree or every Ruby-backed brew
+# command dies during activation (2026-09-22: KeyError on
+# HOMEBREW_ORIGINAL_BREW_FILE after nix-homebrew moved to 7.0.4 and we sat on
+# 6.0.17). Silently skips when either side cannot be determined offline.
+check_brew_src_pin() {
+  local pin_query ours rev ref path theirs
+  pin_query='.nodes."brew-src".original | select(. != null) | "\(.owner)/\(.repo)/\(.ref // .rev)"'
+  ours="$(jq -r "$pin_query" "$REPO_ROOT/flake.lock" 2>/dev/null || true)"
+  [ -n "$ours" ] || return 0
+  rev="$(jq -r '.nodes."nix-homebrew".locked.rev // empty' "$REPO_ROOT/flake.lock" 2>/dev/null || true)"
+  [ -n "$rev" ] || return 0
+  ref="$(jq -r '.nodes."nix-homebrew".locked | "github:\(.owner)/\(.repo)/\(.rev)"' "$REPO_ROOT/flake.lock" 2>/dev/null || true)"
+  path="$(nix flake prefetch --json "$ref" 2>/dev/null | jq -r '.storePath // empty' || true)"
+  [ -n "$path" ] && [ -f "$path/flake.lock" ] || return 0
+  theirs="$(jq -r "$pin_query" "$path/flake.lock" 2>/dev/null || true)"
+  [ -n "$theirs" ] || return 0
+  if [ "$ours" != "$theirs" ]; then
+    warn "brew-src pin mismatch: flake.nix pins $ours but nix-homebrew ${rev:0:7} expects $theirs."
+    warn "Activation would fail. In flake.nix set  brew-src.url = \"github:$theirs\"  and re-run."
+    return 1
+  fi
+  info "brew-src pin matches nix-homebrew's ($theirs)."
+}
+
+# A switch whose activation aborted still advances the system profile, so the
+# running system silently falls behind. Catch that instead of stacking
+# generations on top of a failure nobody noticed.
+check_activation_state() {
+  local current profile
+  current="$(readlink /run/current-system 2>/dev/null || true)"
+  profile="$(readlink -f /nix/var/nix/profiles/system 2>/dev/null || true)"
+  [ -n "$current" ] && [ -n "$profile" ] || return 0
+  if [ "$current" != "$profile" ]; then
+    warn "The latest generation ($(basename "$profile")) never finished activating;"
+    warn "the running system is still $(basename "$current"). Fix the cause, then: macsetup rebuild"
+    return 1
+  fi
+  info "Running system matches the latest generation."
+}
+
+# dry_run_report CFG LOG ALLOW_HEAVY -- evaluate the configuration and list
+# what would be compiled locally. Fails on an evaluation error, or when a
+# multi-hour toolchain build is pending and not explicitly allowed.
+dry_run_report() {
+  local cfg="$1" log="$2" allow_heavy="$3"
+  local local_builds heavy
+  info "Checking what .#$cfg would build locally..."
+  run_logged quiet "$log" nix build --dry-run --no-link ".#darwinConfigurations.$cfg.system" \
+    || return 1
+  local_builds="$(dry_run_local_builds "$log")"
+  if [ -z "$local_builds" ]; then
+    info "Everything comes from the binary cache; nothing to compile locally."
+    return 0
+  fi
+  info "Not in the binary cache, will compile locally:"
+  # shellcheck disable=SC2086  # one name per line, no spaces or globs
+  printf '    %s\n' $local_builds
+  heavy="$(printf '%s\n' "$local_builds" | heavy_builds)"
+  [ -n "$heavy" ] || return 0
+  if [ "$allow_heavy" = true ]; then
+    warn "Proceeding with multi-hour builds because --allow-heavy-builds was given."
+    return 0
+  fi
+  warn "These are multi-hour toolchain builds -- the binary cache has not caught up with this nixpkgs yet:"
+  # shellcheck disable=SC2086
+  printf '    %s\n' $heavy >&2
+  warn "Options: try again in a day or two; update everything except nixpkgs"
+  warn "(macsetup update home-manager nix-darwin homebrew-core homebrew-cask ...);"
+  warn "or force it with: macsetup update --allow-heavy-builds"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Usage
+# ---------------------------------------------------------------------------
+
 usage() {
   cat <<EOF
 macsetup -- declarative macOS setup with Nix
@@ -71,7 +343,14 @@ Usage: macsetup <command> [args]
 Commands:
   bootstrap     First-time setup (install Nix + nix-darwin) [--force]
   rebuild       Apply configuration changes (darwin-rebuild switch)
-  update        Update all Nix inputs and rebuild
+  update        Update flake inputs, build, then switch. If the new inputs
+                fail to evaluate or build, flake.lock is restored and the
+                system is left untouched.
+                  [input...]             update only these inputs
+                  --build-only           update + build, do not switch
+                  --allow-heavy-builds   allow multi-hour toolchain builds
+  upgrade       Alias for update
+  doctor        Check for the usual causes of failed rebuilds
   rollback      Revert to the previous generation
   switch N      Switch to generation N
   list          Show generation history
@@ -109,26 +388,122 @@ cmd_bootstrap() {
 
 cmd_rebuild() {
   stage_user_nix
-  local cfg
+  local cfg work
   cfg="$(config_name)"
-  info "Rebuilding system configuration (.#$cfg)..."
   cd "$REPO_ROOT"
-  sudo darwin-rebuild switch --flake ".#$cfg"
+  check_determinate_nix || true
+  check_brew_src_pin || error "Fix the brew-src pin in flake.nix before rebuilding."
+  info "Rebuilding system configuration (.#$cfg)..."
+  sudo_start
+  work="$(mktemp -d -t macsetup-rebuild)"
+  if ! run_logged tty "$work/switch.log" sudo darwin-rebuild switch --flake ".#$cfg"; then
+    error "Rebuild failed. Full log: $work/switch.log"
+  fi
+  sudo_stop
   gc
+  rm -rf "$work"
   info "Rebuild complete."
 }
 
 cmd_update() {
+  local build_only=false allow_heavy=false
+  local inputs=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --build-only)         build_only=true ;;
+      --allow-heavy-builds) allow_heavy=true ;;
+      -*)                   error "Unknown option for update: $1" ;;
+      *)                    inputs+=("$1") ;;
+    esac
+    shift
+  done
+
   stage_user_nix
-  local cfg
+  local cfg work changes
   cfg="$(config_name)"
-  info "Updating flake inputs..."
   cd "$REPO_ROOT"
-  nix flake update
-  info "Flake inputs updated. Rebuilding (.#$cfg)..."
-  sudo darwin-rebuild switch --flake ".#$cfg"
+
+  check_determinate_nix || true
+  if [ "$build_only" = false ]; then
+    sudo_start
+  fi
+
+  work="$(mktemp -d -t macsetup-update)"
+  cp flake.lock "$work/flake.lock.before"
+
+  info "Updating flake inputs${inputs[*]+ (${inputs[*]})}..."
+  flake_update ${inputs[@]+"${inputs[@]}"} \
+    || error "nix flake update failed; flake.lock is unchanged."
+
+  changes="$(lock_diff "$work/flake.lock.before" flake.lock)"
+  if [ -z "$changes" ]; then
+    info "All inputs were already up to date."
+  else
+    info "Updated inputs:"
+    # shellcheck disable=SC2001  # multi-line value; sed is the readable option
+    echo "$changes" | sed 's/^/    /'
+  fi
+
+  # From here until activation, any failure restores the previous flake.lock:
+  # the machine stays on the known-good pins and nothing is half-applied.
+  if ! check_brew_src_pin; then
+    restore_lock "$work"
+    error "Fix the brew-src pin in flake.nix, then re-run 'macsetup update'."
+  fi
+  if ! dry_run_report "$cfg" "$work/dry-run.log" "$allow_heavy"; then
+    restore_lock "$work"
+    error "Update aborted before building anything. Logs: $work"
+  fi
+
+  info "Building the new system configuration (as $USER; sudo comes later)..."
+  if ! run_logged tty "$work/build.log" nix build --no-link ".#darwinConfigurations.$cfg.system"; then
+    restore_lock "$work"
+    error "The updated inputs do not build; nothing was changed on this Mac. Full log: $work/build.log"
+  fi
+
+  if [ "$build_only" = true ]; then
+    rm -rf "$work"
+    info "Build succeeded. flake.lock now holds the new pins; run 'macsetup rebuild' to activate them."
+    return 0
+  fi
+
+  info "Activating (.#$cfg)..."
+  if ! run_logged tty "$work/switch.log" sudo darwin-rebuild switch --flake ".#$cfg"; then
+    error "Activation failed after a successful build, so this is an activation-time problem (usually Homebrew).
+Full log:        $work/switch.log
+Retry with:      macsetup rebuild
+Or go back with: cp $work/flake.lock.before flake.lock && macsetup rebuild"
+  fi
+  sudo_stop
   gc
+  rm -rf "$work"
   info "Update complete."
+  if [ -n "$changes" ]; then
+    info "Commit the new pins:  git commit -m 'chore: update flake.lock' flake.lock"
+  fi
+}
+
+cmd_doctor() {
+  stage_user_nix
+  local cfg log status=0
+  cfg="$(config_name)"
+  cd "$REPO_ROOT"
+  info "Configuration: .#$cfg"
+  check_determinate_nix || status=1
+  check_activation_state || status=1
+  check_brew_src_pin || status=1
+  if ! git -C "$REPO_ROOT" diff --quiet -- flake.lock; then
+    warn "flake.lock has uncommitted changes (an update that was never committed, or one that failed)."
+  fi
+  log="$(mktemp)"
+  dry_run_report "$cfg" "$log" false || status=1
+  rm -f "$log"
+  if [ "$status" -eq 0 ]; then
+    info "No problems found."
+  else
+    warn "Problems found -- see above."
+  fi
+  return "$status"
 }
 
 cmd_rollback() {
@@ -167,44 +542,55 @@ cmd_capture() {
 # Main dispatch
 # ---------------------------------------------------------------------------
 
-if [ $# -eq 0 ]; then
-  usage
-  exit 1
-fi
-
-case "$1" in
-  bootstrap)
-    cmd_bootstrap "${2:-}"
-    ;;
-  rebuild)
-    cmd_rebuild
-    ;;
-  update)
-    cmd_update
-    ;;
-  rollback)
-    cmd_rollback
-    ;;
-  switch)
-    if [ $# -lt 2 ]; then
-      error "Usage: macsetup switch <generation-number>"
-    fi
-    cmd_switch "$2"
-    ;;
-  list)
-    cmd_list
-    ;;
-  capture)
-    shift
-    cmd_capture "$@"
-    ;;
-  -h|--help)
-    usage
-    ;;
-  *)
-    echo "Unknown command: $1"
-    echo ""
+main() {
+  if [ $# -eq 0 ]; then
     usage
     exit 1
-    ;;
-esac
+  fi
+
+  case "$1" in
+    bootstrap)
+      cmd_bootstrap "${2:-}"
+      ;;
+    rebuild)
+      cmd_rebuild
+      ;;
+    update|upgrade)
+      shift
+      cmd_update "$@"
+      ;;
+    doctor)
+      cmd_doctor
+      ;;
+    rollback)
+      cmd_rollback
+      ;;
+    switch)
+      if [ $# -lt 2 ]; then
+        error "Usage: macsetup switch <generation-number>"
+      fi
+      cmd_switch "$2"
+      ;;
+    list)
+      cmd_list
+      ;;
+    capture)
+      shift
+      cmd_capture "$@"
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      echo "Unknown command: $1"
+      echo ""
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+# Only dispatch when executed; scripts/test-macsetup.sh sources this file.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi
