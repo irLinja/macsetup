@@ -167,10 +167,9 @@
     enable = true;
     enableZshIntegration = true;
     nix-direnv.enable = true;
-    package = pkgs.direnv.overrideAttrs (old: {
-      # Fix: direnv 2.37.1 uses -linkmode=external which requires cgo
-      env = (old.env or { }) // { CGO_ENABLED = "1"; };
-    });
+    # No package override: keep the stock derivation so it comes from the
+    # binary cache. The 2026-03 CGO_ENABLED workaround for direnv 2.37.1
+    # forced a local Go compile on every update long after nixpkgs fixed it.
   };
 
   # ── PATH ────────────────────────────────────────────────────────
