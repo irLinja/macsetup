@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Unit tests for the pure helper functions in ./macsetup.
-# No sudo, no network, no nix evaluation -- safe to run anywhere:
+# Tests for ./macsetup: pure helpers directly, orchestration against stubbed
+# sudo/nix/brew/mas. No real sudo, no network, no nix evaluation -- safe to
+# run anywhere:
 #   scripts/test-macsetup.sh
 set -euo pipefail
 
@@ -125,9 +126,10 @@ assert_eq "current: latest falls back to daemon version" "3.22.5 3.22.5" "$(pars
 # Stubs for the external commands the orchestration helpers drive. Each stub
 # appends what it was asked to do to $CALLS, so a test can check exactly which
 # commands ran, in what order, and whether they went through sudo. The point
-# of most of these tests: every sudo call must happen directly in macsetup's
-# own terminal session -- inside `script` or under activation it runs in a
-# new session, and sudo asks for approval all over again.
+# of most of these tests: one approval per run. Every sudo call must happen
+# directly in macsetup's own terminal session (inside `script` or under
+# activation it runs in a new session and asks again), and nothing that needs
+# that approval may run after `brew` starts (brew.sh revokes it every time).
 # ---------------------------------------------------------------------------
 stubs="$tmp/stubs"
 mkdir -p "$stubs"
@@ -150,16 +152,55 @@ shift
 "$@" > "$log" 2>&1
 STUB
 
+# Like the real one, `upgrade` returns before launchd restarts the daemon: the
+# new version only shows up DN_RESTART_POLLS `version` calls later.
 cat > "$stubs/determinate-nixd" <<'STUB'
 #!/bin/bash
 case "$1" in
-  version) cat "$DN_VERSION_FILE" ;;
+  version)
+    if [ -f "$DN_VERSION_FILE.pending" ]; then
+      left="$(cat "$DN_VERSION_FILE.countdown")"
+      if [ "$left" -le 0 ]; then
+        mv "$DN_VERSION_FILE.pending" "$DN_VERSION_FILE"
+        rm -f "$DN_VERSION_FILE.countdown"
+        echo "daemon restarted" >> "$CALLS"
+      else
+        echo $((left - 1)) > "$DN_VERSION_FILE.countdown"
+      fi
+    fi
+    cat "$DN_VERSION_FILE"
+    ;;
   upgrade)
     echo "determinate-nixd upgrade" >> "$CALLS"
     [ -z "${DN_UPGRADE_FAIL:-}" ] || exit 1
     printf 'Determinate Nixd daemon version: %s\nDeterminate Nixd client version: %s\n' \
-      "$DN_LATEST" "$DN_LATEST" > "$DN_VERSION_FILE"
+      "$DN_LATEST" "$DN_LATEST" > "$DN_VERSION_FILE.pending"
+    echo "${DN_RESTART_POLLS:-0}" > "$DN_VERSION_FILE.countdown"
     ;;
+esac
+STUB
+
+cat > "$stubs/nix" <<'STUB'
+#!/bin/bash
+echo "nix $*" >> "$CALLS"
+STUB
+
+cat > "$stubs/nix-env" <<'STUB'
+#!/bin/bash
+echo "nix-env $*" >> "$CALLS"
+STUB
+
+cat > "$stubs/nix-collect-garbage" <<'STUB'
+#!/bin/bash
+echo "nix-collect-garbage $*" >> "$CALLS"
+STUB
+
+# mas outdated prints $MAS_OUTDATED; everything else is logged.
+cat > "$stubs/mas" <<'STUB'
+#!/bin/bash
+case "$1" in
+  outdated) [ -z "${MAS_OUTDATED:-}" ] || echo "$MAS_OUTDATED" ;;
+  *) echo "mas $*" >> "$CALLS" ;;
 esac
 STUB
 
@@ -175,7 +216,7 @@ STUB
 
 cat > "$stubs/brew" <<'STUB'
 #!/bin/bash
-echo "brew $* (PATH starts ${PATH%%:*})" >> "$CALLS"
+echo "brew $*" >> "$CALLS"
 if [ -n "${BREW_FAIL:-}" ]; then
   echo "==> Upgrading microsoft-outlook"
   echo "Error: Download failed on Cask 'microsoft-outlook' with message: Download failed: https://go.microsoft.com/fwlink/?linkid=525137" >&2
@@ -213,11 +254,36 @@ dn_version() {
 # ---------------------------------------------------------------------------
 echo "upgrade_determinate_nix"
 # ---------------------------------------------------------------------------
+# shellcheck disable=SC2034  # read by wait_for_determinate_nix, sourced from ./macsetup
+NIX_DAEMON_POLL_SECONDS=0
+
 dn_version 3.16.0 3.23.0
 rc="$(in_stubs upgrade_determinate_nix)"
-assert_eq "behind: upgrades exactly once, through sudo" \
-  $'sudo determinate-nixd upgrade\ndeterminate-nixd upgrade' "$(cat "$CALLS")"
+assert_eq "behind: upgrades once through sudo, then waits for the new daemon to answer" \
+  $'sudo determinate-nixd upgrade\ndeterminate-nixd upgrade\ndaemon restarted\nnix store info' "$(cat "$CALLS")"
 assert_eq "behind: succeeds" 0 "$rc"
+
+# 2026-10-05: the daemon came back 21 s after `upgrade` returned, and the
+# `nix flake update` that had already started died with it.
+dn_version 3.16.0 3.23.0
+export DN_RESTART_POLLS=3
+rc="$(in_stubs upgrade_determinate_nix)"
+unset DN_RESTART_POLLS
+assert_eq "slow daemon restart: keeps polling, only talks to the store once the new daemon is up" \
+  $'sudo determinate-nixd upgrade\ndeterminate-nixd upgrade\ndaemon restarted\nnix store info' "$(cat "$CALLS")"
+assert_eq "slow daemon restart: succeeds" 0 "$rc"
+
+dn_version 3.16.0 3.23.0
+export DN_RESTART_POLLS=1000
+# shellcheck disable=SC2034
+NIX_DAEMON_WAIT_TRIES=3
+rc="$(in_stubs upgrade_determinate_nix)"
+# shellcheck disable=SC2034
+NIX_DAEMON_WAIT_TRIES=90
+unset DN_RESTART_POLLS
+rm -f "$DN_VERSION_FILE.pending" "$DN_VERSION_FILE.countdown"
+assert_eq "daemon never comes back: gives up instead of hanging, and does not fail the update" 0 "$rc"
+assert_contains "daemon never comes back: says so" "WARNING" "$(cat "$tmp/err")"
 
 dn_version 3.23.0
 rc="$(in_stubs upgrade_determinate_nix)"
@@ -253,6 +319,15 @@ assert_eq "asks once up front, revokes the approval on stop" $'sudo -v\nsudo -k'
 assert_eq "keep-alive loop is gone after stop" "keep-alive stopped" "$(tail -n1 "$tmp/out")"
 assert_eq "cycle succeeds" 0 "$rc"
 
+# Homebrew may ask for its own approval after macsetup's is revoked; the
+# EXIT trap runs sudo_stop again and must revoke that one too.
+sudo_stop_twice() { sudo_start; sudo_stop; sudo_stop; }
+rc="$(in_stubs sudo_stop_twice)"
+assert_eq "a later stop (the EXIT trap) revokes again" $'sudo -v\nsudo -k\nsudo -k' "$(cat "$CALLS")"
+
+rc="$(in_stubs sudo_stop)"
+assert_eq "never started (doctor, list, ...): leaves the user's own approval alone" "" "$(cat "$CALLS")"
+
 # ---------------------------------------------------------------------------
 echo "run_logged sudo-tty"
 # ---------------------------------------------------------------------------
@@ -268,30 +343,47 @@ unset DR_FAIL_FIRST
 assert_eq "retries the transient daemon-socket error" 2 "$(grep -c '^darwin-rebuild' "$CALLS")"
 assert_eq "succeeds on the retry" 0 "$rc"
 
-# ---------------------------------------------------------------------------
-echo "homebrew_upgrade"
-# ---------------------------------------------------------------------------
-mkdir -p "$tmp/system"
-cat > "$tmp/system/activate" <<'TXT'
+# Activated-system fixture: the `brew bundle` line nix-darwin writes (copied
+# from a real activate script), pointing at a fixture Brewfile and a mas dir.
+masdir="$tmp/store/l7c8zj12kzc4fv3rkz2nzw0czkvlxksz-mas-7.0.0/bin"
+mkdir -p "$tmp/system" "$masdir"
+# Only activation's mas exists, as on the real machine (it is not on PATH).
+mv "$stubs/mas" "$masdir/mas"
+cat > "$tmp/Brewfile" <<'TXT'
+# Taps
+tap "homebrew/homebrew-core"
+# Formulae
+brew "jq"
+# Casks
+cask "ledger-wallet", trusted: true
+cask "microsoft-outlook", trusted: true
+# Mac App Store
+mas "1Password for Safari", id: 1569813296
+mas "Amphetamine", id: 937984704
+TXT
+write_activate() {
+  cat > "$tmp/system/activate" <<TXT
 # Homebrew Bundle
 echo >&2 "Homebrew bundle..."
 if [ -f "/opt/homebrew/bin/brew" ]; then
-  PATH="/opt/homebrew/bin:/nix/store/l7c8zj12kzc4fv3rkz2nzw0czkvlxksz-mas-7.0.0/bin:$PATH" sudo --preserve-env=PATH --user=arash --set-home env brew bundle --file='/nix/store/lmrcdn5f747096fwcmq25lk44fk7cgp6-Brewfile' --no-upgrade --zap --force-cleanup
+  PATH="/opt/homebrew/bin:$masdir:\$PATH" sudo --preserve-env=PATH --user=arash --set-home env brew bundle --file='$tmp/Brewfile' --no-upgrade --zap --force-cleanup
 else
   echo -e "\e[1;31merror: Homebrew is not installed, skipping...\e[0m" >&2
 fi
 TXT
-# shellcheck disable=SC2034  # read by homebrew_upgrade, sourced from ./macsetup
+}
+write_activate
+# shellcheck disable=SC2034  # read by the sourced ./macsetup functions
 CURRENT_SYSTEM="$tmp/system"
 # shellcheck disable=SC2034
 HOMEBREW_BIN="$stubs/brew"
 
+# ---------------------------------------------------------------------------
+echo "homebrew_upgrade"
+# ---------------------------------------------------------------------------
 rc="$(in_stubs homebrew_upgrade)"
-assert_eq "runs brew directly in this session, never through sudo" "brew" "$(cut -d' ' -f1 "$CALLS" | sort -u)"
-assert_contains "installs/upgrades from the Brewfile activation used" \
-  "bundle --file=/nix/store/lmrcdn5f747096fwcmq25lk44fk7cgp6-Brewfile" "$(cat "$CALLS")"
-assert_contains "puts activation's mas first on PATH (mas is not on the user's PATH)" \
-  "(PATH starts /nix/store/l7c8zj12kzc4fv3rkz2nzw0czkvlxksz-mas-7.0.0/bin)" "$(cat "$CALLS")"
+assert_eq "one brew process for all formulae and casks (each brew start revokes sudo approvals)" \
+  "brew upgrade" "$(cat "$CALLS")"
 assert_eq "succeeds" 0 "$rc"
 
 export BREW_FAIL=1
@@ -299,11 +391,43 @@ rc="$(in_stubs homebrew_upgrade)"
 unset BREW_FAIL
 assert_eq "a failed cask upgrade does not fail the run (the system is already switched)" 0 "$rc"
 assert_contains "the closing warning names the failed cask" "microsoft-outlook" "$(cat "$tmp/err")"
+# The kept log lands in the real per-user temp dir (macOS mktemp -t ignores TMPDIR).
+rm -f "$(sed -n 's/.*(full log: \(.*\))$/\1/p' "$tmp/err")"
 
 printf '#!/bin/sh\n# configuration without Homebrew\n' > "$tmp/system/activate"
 rc="$(in_stubs homebrew_upgrade)"
-assert_eq "no Brewfile in the activated system: brew is not run" "" "$(cat "$CALLS")"
-assert_eq "no Brewfile: succeeds" 0 "$rc"
+write_activate
+assert_eq "activation does not manage Homebrew: brew is not run" "" "$(cat "$CALLS")"
+assert_eq "activation does not manage Homebrew: succeeds" 0 "$rc"
+
+# ---------------------------------------------------------------------------
+echo "appstore_upgrade"
+# ---------------------------------------------------------------------------
+export MAS_OUTDATED="937984704  Amphetamine  (5.3.2 -> 5.3.3)"
+rc="$(in_stubs appstore_upgrade)"
+assert_eq "updates the Brewfile's App Store apps with activation's mas, directly (mas reuses the approval)" \
+  "mas update 1569813296 937984704" "$(cat "$CALLS")"
+assert_eq "succeeds" 0 "$rc"
+unset MAS_OUTDATED
+
+rc="$(in_stubs appstore_upgrade)"
+assert_eq "nothing outdated: mas update is not run" "" "$(cat "$CALLS")"
+assert_eq "nothing outdated: succeeds" 0 "$rc"
+
+# ---------------------------------------------------------------------------
+echo "rebuild: order of everything after activation"
+# ---------------------------------------------------------------------------
+mkdir -p "$tmp/repo"
+dn_version 3.23.0
+export MAS_OUTDATED="937984704  Amphetamine  (5.3.2 -> 5.3.3)"
+# shellcheck disable=SC2034
+REPO_ROOT="$tmp/repo"
+rc="$(in_stubs cmd_rebuild)"
+unset MAS_OUTDATED
+assert_eq "one approval up front; App Store + gc use it; it is revoked; Homebrew (which revokes on start) goes last" \
+  $'sudo -v\nsudo script\nmas update\nsudo nix-env\nsudo nix-collect-garbage\nsudo -k\nbrew upgrade' \
+  "$(grep -E '^(sudo|mas|brew) ' "$CALLS" | cut -d' ' -f1-2)"
+assert_eq "rebuild succeeds" 0 "$rc"
 
 # ---------------------------------------------------------------------------
 echo

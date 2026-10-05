@@ -24,13 +24,14 @@
 
     onActivation = {
       autoUpdate = true;
-      # Upgrades run from `macsetup rebuild/update` right after activation
-      # instead (homebrew_upgrade in ./macsetup). Activation runs brew in a
-      # terminal session of its own, so every cask with a root installer
-      # (microsoft-outlook, microsoft-teams, gcloud-cli, openvpn-connect,
-      # temurin@25) asked for sudo again; run from macsetup, they reuse its one
-      # approval. A bare `darwin-rebuild switch` therefore installs and removes
-      # packages but never upgrades them.
+      # Upgrades run from `macsetup rebuild/update` after activation instead
+      # (finish_switch in ./macsetup), as ONE `brew upgrade` process. Every
+      # `brew` start revokes sudo approvals (brew.sh: sudo --reset-timestamp)
+      # and `brew bundle` starts one brew per cask, so every cask with a root
+      # installer (microsoft-outlook, microsoft-teams, gcloud-cli,
+      # openvpn-connect, temurin@25, ...) asked for sudo again. A bare
+      # `darwin-rebuild switch` therefore installs and removes packages but
+      # never upgrades them.
       upgrade = false;
       # "zap": undeclared formulae/casks are REMOVED on every activation (casks
       # get `brew uninstall --zap`, which wipes their app data too) -- ad-hoc
