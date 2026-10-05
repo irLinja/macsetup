@@ -21,12 +21,13 @@ Users clone the repo, run the bootstrap wizard, answer a few questions, and get 
 # Apply configuration (auto-detects hostname-based config or falls back to .#macsetup)
 macsetup rebuild
 
-# Or directly:
+# Or directly (installs/removes Homebrew packages but never upgrades them):
 sudo darwin-rebuild switch --flake .#macsetup
 
-# Update all dependencies: nix flake update -> preflight -> build as the user
-# -> sudo darwin-rebuild switch. If the new inputs fail to evaluate or build,
-# flake.lock is restored and nothing changes on the machine.
+# Update all dependencies: upgrade Determinate Nix if behind -> nix flake
+# update -> preflight -> build as the user -> darwin-rebuild switch -> Homebrew
+# upgrades. If the new inputs fail to evaluate or build, flake.lock is restored
+# and nothing changes on the machine. Asks for sudo once, at the start.
 macsetup update                      # alias: macsetup upgrade
 macsetup update nixpkgs home-manager # only these inputs
 macsetup update --build-only         # update + build, apply later with rebuild
@@ -64,7 +65,7 @@ macsetup capture
 - `modules/optional/` -- opt-in feature modules (1password)
 - `scripts/bootstrap.sh` -- interactive wizard: bare macOS -> first successful build
 - `scripts/capture.sh` -- audit tool with host config generation
-- `macsetup` -- CLI wrapper for rebuild, update (fail-safe pipeline), doctor, rollback, capture; must stay bash 3.2 compatible (`/bin/bash` on a bare Mac)
+- `macsetup` -- CLI wrapper for rebuild, update (fail-safe pipeline, Determinate Nix + Homebrew upgrades, one sudo approval per run), doctor, rollback, capture; must stay bash 3.2 compatible (`/bin/bash` on a bare Mac)
 - `scripts/test-macsetup.sh` -- unit tests for the CLI's pure helpers (sources `macsetup`, which only dispatches when executed)
 
 ### Responsibility Boundary
@@ -168,6 +169,7 @@ Host configs import a profile and can override any setting with `lib.mkForce` or
 - `cleanup = "zap"` in `modules/darwin/homebrew.nix` -- any Homebrew formulae, casks, or mas apps NOT declared in config are **removed** on every `darwin-rebuild switch`
 - `mutableTaps = false` in `hosts/shared.nix` -- undeclared taps are also removed
 - Always add new Homebrew packages to the config **before** running rebuild, or they will be uninstalled
+- `onActivation.upgrade = false`: activation only installs and removes. `macsetup rebuild` / `update` upgrade right after activation (`homebrew_upgrade`: `brew bundle` on the Brewfile and mas PATH read from `/run/current-system/activate`), from the terminal session that holds the run's one sudo approval. A bare `darwin-rebuild switch` never upgrades Homebrew packages
 
 ### nix-homebrew Tap Rules
 
@@ -193,7 +195,8 @@ Host configs import a profile and can override any setting with `lib.mkForce` or
 - mas requires user to be signed into App Store (not fully unattended)
 - Old `~/.gitconfig` overrides Home Manager's `~/.config/git/config` -- remove it if Home Manager manages git
 - `darwin-rebuild switch --flake .` uses hostname as config name -- use `--flake .#macsetup` explicitly or let the CLI auto-detect
-- `error: polling file descriptor: Invalid argument` (often under a `derivationStrict` / `activationScripts` trace) is a Determinate Nix < 3.22.0 client bug, not a config error: it polls the daemon socket with `select()`, which macOS rejects once a file descriptor reaches 1024, and Nix raises its own fd limit so any big evaluation can hit it. Fix: `sudo determinate-nixd upgrade`. The CLI retries the affected step up to 3 times and warns while the daemon is below `DETERMINATE_NIX_MIN_OK`
+- `error: polling file descriptor: Invalid argument` (often under a `derivationStrict` / `activationScripts` trace) is a Determinate Nix < 3.22.0 client bug, not a config error: it polls the daemon socket with `select()`, which macOS rejects once a file descriptor reaches 1024, and Nix raises its own fd limit so any big evaluation can hit it. Fix: Determinate Nix >= 3.22.0 -- `macsetup update` upgrades it first thing whenever `determinate-nixd version` reports a newer release (or run `sudo determinate-nixd upgrade`). The CLI retries the affected step up to 3 times and warns while the daemon is below `DETERMINATE_NIX_MIN_OK`
+- sudo approvals are per terminal session (`timestamp_type=tty` records the tty, session ID and session-leader start time), and sudo >= 1.9.14 runs every command in a new pseudo-terminal (`use_pty`). Anything calling sudo from inside `script`, activation, or another sudo therefore asks again -- that is why Homebrew cask installers used to prompt over and over during activation. `macsetup` asks once (`sudo_start`), keeps that approval alive, runs `sudo script ...` (never `script ... sudo ...`), runs Homebrew itself after activation, and revokes the approval with `sudo -k` on exit. Do NOT cut prompts with `timestamp_type=global` or NOPASSWD rules: rejected, because any process running as the user (including AI agents) could then use sudo without asking
 - `macsetup update` keeps every failure log in a `macsetup-update.XXXXXX` temp dir it prints on failure, including `flake.lock.before` / `flake.lock.after` for bisecting which input broke the build. Only evaluation/build failures restore `flake.lock`; an activation failure keeps the new pins because the build itself was good (retry with `macsetup rebuild`)
 - `macsetup update` refuses to start multi-hour local builds (dotnet, llvm, clang, gcc, rustc, go, nodejs, python, openjdk, ...) -- they mean the binary cache has not caught up with the new nixpkgs. Wait a day, update other inputs only, or pass `--allow-heavy-builds`
 - The `brew-src` tag in `flake.nix` must match the tag in nix-homebrew's own `flake.lock` (it vendors part of `bin/brew` from that release). `macsetup doctor`, `update` and `rebuild` compare the two and stop before activating when they differ

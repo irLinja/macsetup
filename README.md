@@ -23,8 +23,8 @@ cd ~/macsetup
 | Command | Description |
 |---------|-------------|
 | `macsetup bootstrap` | First-time setup (install Nix + nix-darwin) |
-| `macsetup rebuild` | Apply configuration changes |
-| `macsetup update` | Update Nix inputs, build, then switch; restores `flake.lock` if the new inputs do not build (`--build-only`, `--allow-heavy-builds`, `[input...]`) |
+| `macsetup rebuild` | Apply configuration changes, then upgrade Homebrew packages; asks for sudo once |
+| `macsetup update` | Upgrade Determinate Nix if behind, update Nix inputs, build, switch, upgrade Homebrew packages; asks for sudo once; restores `flake.lock` if the new inputs do not build (`--build-only`, `--allow-heavy-builds`, `[input...]`) |
 | `macsetup doctor` | Check for the usual causes of failed rebuilds |
 | `macsetup list` | Show generation history |
 | `macsetup rollback` | Revert to previous generation |

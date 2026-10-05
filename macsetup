@@ -31,6 +31,10 @@ fi
 # evaluation can trip it. 3.22.0 switched to poll().
 DETERMINATE_NIX_MIN_OK="3.22.0"
 
+# The system activation just switched to, and nix-homebrew's brew.
+CURRENT_SYSTEM="/run/current-system"
+HOMEBREW_BIN="/opt/homebrew/bin/brew"
+
 # ---------------------------------------------------------------------------
 # Output helpers
 # ---------------------------------------------------------------------------
@@ -177,9 +181,13 @@ restore_lock() {
 
 SUDO_KEEPALIVE_PID=""
 
-# Prompt for the password once, right away, and keep the ticket alive so a
-# long build never ends in a second prompt that nobody is there to answer.
+# Ask once, right away, and keep that one approval alive for the whole run so
+# a long build never ends in a second prompt that nobody is there to answer.
+# sudo ties an approval to this terminal session, so only commands macsetup
+# runs itself, directly, can reuse it (see run_logged sudo-tty and
+# homebrew_upgrade). sudo_stop revokes it: nothing outlives the run.
 sudo_start() {
+  info "sudo is needed once for this run; the approval is revoked when macsetup exits."
   sudo -v || error "sudo authentication failed"
   ( while sleep 60; do sudo -n -v 2>/dev/null || exit 0; done ) &
   SUDO_KEEPALIVE_PID=$!
@@ -188,7 +196,9 @@ sudo_start() {
 sudo_stop() {
   if [ -n "$SUDO_KEEPALIVE_PID" ]; then
     kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+    wait "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
     SUDO_KEEPALIVE_PID=""
+    sudo -k 2>/dev/null || true
   fi
 }
 
@@ -199,8 +209,11 @@ trap sudo_stop EXIT
 # ---------------------------------------------------------------------------
 
 # run_logged MODE LOG CMD... -- run CMD, capturing all output to LOG.
-#   tty:   CMD runs on a pseudo-terminal, so nix keeps its progress bar.
-#   quiet: output goes to LOG only (the last lines are shown on failure).
+#   tty:      CMD runs on a pseudo-terminal, so nix keeps its progress bar.
+#   sudo-tty: as tty, with CMD running as root. sudo goes outside `script`:
+#             script starts a new terminal session, where sudo would ask for
+#             approval again instead of reusing sudo_start's.
+#   quiet:    output goes to LOG only (the last lines are shown on failure).
 # When the failure is the transient daemon-socket bug, the command is retried.
 run_logged() {
   local mode="$1" log="$2"
@@ -209,15 +222,16 @@ run_logged() {
   for attempt in 1 2 3; do
     ok=true
     case "$mode" in
-      tty)   script -q -t 0 "$log" "$@" || ok=false ;;
-      quiet) "$@" >"$log" 2>&1 || ok=false ;;
+      tty)      script -q -t 0 "$log" "$@" || ok=false ;;
+      sudo-tty) sudo script -q -t 0 "$log" "$@" || ok=false ;;
+      quiet)    "$@" >"$log" 2>&1 || ok=false ;;
     esac
     if [ "$ok" = true ]; then
       return 0
     fi
     if [ "$attempt" -lt 3 ] && is_transient_nix_error "$log"; then
       warn "Nix hit the transient daemon-socket bug (attempt $attempt of 3); retrying..."
-      warn "Permanent fix: sudo determinate-nixd upgrade   (fixed in Determinate Nix $DETERMINATE_NIX_MIN_OK)"
+      warn "Permanent fix: Determinate Nix $DETERMINATE_NIX_MIN_OK or later ('macsetup update' upgrades it)"
       continue
     fi
     if [ "$mode" = quiet ]; then
@@ -232,26 +246,34 @@ run_logged() {
 # Preflight checks
 # ---------------------------------------------------------------------------
 
-# Warn when Determinate Nix is behind; fail (after warning) when it still has
-# the daemon-socket bug that aborts rebuilds at random.
-check_determinate_nix() {
-  command -v determinate-nixd >/dev/null 2>&1 || return 0
-  local tmp versions daemon latest
+# determinate_nix_versions -- print "<daemon> <latest>" as reported by
+# determinate-nixd; fails when it is not installed or says nothing usable.
+determinate_nix_versions() {
+  command -v determinate-nixd >/dev/null 2>&1 || return 1
+  local tmp versions
   tmp="$(mktemp)"
   determinate-nixd version >"$tmp" 2>/dev/null || true
   versions="$(parse_determinate_versions "$tmp" || true)"
   rm -f "$tmp"
-  [ -n "$versions" ] || return 0
+  [ -n "$versions" ] || return 1
+  echo "$versions"
+}
+
+# Warn when Determinate Nix is behind; fail (after warning) when it still has
+# the daemon-socket bug that aborts rebuilds at random.
+check_determinate_nix() {
+  local versions daemon latest
+  versions="$(determinate_nix_versions)" || return 0
   daemon="${versions%% *}"
   latest="${versions##* }"
   if version_lt "$daemon" "$DETERMINATE_NIX_MIN_OK"; then
     warn "Determinate Nix $daemon can abort any rebuild with 'polling file descriptor: Invalid argument'"
-    warn "(select() on a file descriptor >= 1024; fixed in $DETERMINATE_NIX_MIN_OK). Upgrade with:"
-    warn "    sudo determinate-nixd upgrade"
+    warn "(select() on a file descriptor >= 1024; fixed in $DETERMINATE_NIX_MIN_OK)."
+    warn "'macsetup update' upgrades it automatically, or run: sudo determinate-nixd upgrade"
     return 1
   fi
   if version_lt "$daemon" "$latest"; then
-    warn "Determinate Nix $daemon is behind the latest release ($latest): sudo determinate-nixd upgrade"
+    warn "Determinate Nix $daemon is behind the latest release ($latest); 'macsetup update' upgrades it."
   fi
   return 0
 }
@@ -331,6 +353,64 @@ dry_run_report() {
 }
 
 # ---------------------------------------------------------------------------
+# Upgrades that ride along with update and rebuild
+# ---------------------------------------------------------------------------
+
+# upgrade_determinate_nix -- move Determinate Nix to the release Determinate
+# Systems currently advises, before the rest of an update runs on it. Needs
+# sudo_start first. A failed upgrade (offline, server trouble) only warns:
+# the update carries on with the installed version.
+upgrade_determinate_nix() {
+  local versions daemon latest
+  versions="$(determinate_nix_versions)" || return 0
+  daemon="${versions%% *}"
+  latest="${versions##* }"
+  if ! version_lt "$daemon" "$latest"; then
+    info "Determinate Nix $daemon is the latest release."
+    return 0
+  fi
+  info "Upgrading Determinate Nix $daemon -> $latest..."
+  if ! sudo determinate-nixd upgrade; then
+    warn "Determinate Nix upgrade failed; continuing on $daemon."
+    return 0
+  fi
+  versions="$(determinate_nix_versions || true)"
+  if [ -n "$versions" ]; then
+    info "Determinate Nix is now ${versions%% *}."
+  fi
+}
+
+# homebrew_upgrade -- install and upgrade everything in the Brewfile of the
+# system activation just switched to. Activation itself only runs
+# `brew bundle --no-upgrade` (modules/darwin/homebrew.nix): it runs Homebrew in
+# a terminal session of its own, where every cask with a root installer asked
+# for sudo again. From here, Homebrew's sudo calls share this session and
+# reuse sudo_start's approval. Uses activation's PATH additions, since mas is
+# not on the user's PATH. Never fails the caller: the system is already
+# switched, so a failed download is a warning, not a failed run.
+homebrew_upgrade() {
+  local activate="$CURRENT_SYSTEM/activate" brewfile masbin log
+  [ -x "$HOMEBREW_BIN" ] || return 0
+  brewfile="$(grep -o -E '/nix/store/[a-z0-9]{32}-Brewfile' "$activate" 2>/dev/null | head -n1 || true)"
+  if [ -z "$brewfile" ]; then
+    warn "No Brewfile in $activate; skipping Homebrew upgrades."
+    return 0
+  fi
+  masbin="$(grep -o -E '/nix/store/[a-z0-9]{32}-mas-[^/":]*/bin' "$activate" 2>/dev/null | head -n1 || true)"
+  info "Upgrading Homebrew packages..."
+  log="$(mktemp -t macsetup-brew)"
+  if PATH="${masbin:+$masbin:}$PATH" HOMEBREW_NO_AUTO_UPDATE=1 \
+    "$HOMEBREW_BIN" bundle --file="$brewfile" --quiet 2>&1 | tee "$log"; then
+    rm -f "$log"
+    return 0
+  fi
+  warn "Some Homebrew packages failed to install or upgrade:"
+  grep -E '^Error' "$log" >&2 || true
+  warn "The system itself is up to date. Retry the rest with: brew upgrade   (full log: $log)"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Usage
 # ---------------------------------------------------------------------------
 
@@ -342,10 +422,12 @@ Usage: macsetup <command> [args]
 
 Commands:
   bootstrap     First-time setup (install Nix + nix-darwin) [--force]
-  rebuild       Apply configuration changes (darwin-rebuild switch)
-  update        Update flake inputs, build, then switch. If the new inputs
-                fail to evaluate or build, flake.lock is restored and the
-                system is left untouched.
+  rebuild       Apply configuration changes (darwin-rebuild switch), then
+                install/upgrade Homebrew packages
+  update        Upgrade Determinate Nix when a newer release exists, update
+                flake inputs, build, then switch and upgrade Homebrew
+                packages. If the new inputs fail to evaluate or build,
+                flake.lock is restored and the system is left untouched.
                   [input...]             update only these inputs
                   --build-only           update + build, do not switch
                   --allow-heavy-builds   allow multi-hour toolchain builds
@@ -361,6 +443,9 @@ Options:
 
 After rebuild, update, rollback, and switch, old generations are
 automatically pruned (keeping the last 3) and garbage collected.
+
+rebuild and update ask for sudo once, at the start, and revoke the approval
+when they exit.
 EOF
 }
 
@@ -393,14 +478,15 @@ cmd_rebuild() {
   cd "$REPO_ROOT"
   check_determinate_nix || true
   check_brew_src_pin || error "Fix the brew-src pin in flake.nix before rebuilding."
-  info "Rebuilding system configuration (.#$cfg)..."
   sudo_start
+  info "Rebuilding system configuration (.#$cfg)..."
   work="$(mktemp -d -t macsetup-rebuild)"
-  if ! run_logged tty "$work/switch.log" sudo darwin-rebuild switch --flake ".#$cfg"; then
+  if ! run_logged sudo-tty "$work/switch.log" darwin-rebuild switch --flake ".#$cfg"; then
     error "Rebuild failed. Full log: $work/switch.log"
   fi
-  sudo_stop
+  homebrew_upgrade
   gc
+  sudo_stop
   rm -rf "$work"
   info "Rebuild complete."
 }
@@ -423,9 +509,11 @@ cmd_update() {
   cfg="$(config_name)"
   cd "$REPO_ROOT"
 
-  check_determinate_nix || true
-  if [ "$build_only" = false ]; then
+  if [ "$build_only" = true ]; then
+    check_determinate_nix || true
+  else
     sudo_start
+    upgrade_determinate_nix
   fi
 
   work="$(mktemp -d -t macsetup-update)"
@@ -468,14 +556,15 @@ cmd_update() {
   fi
 
   info "Activating (.#$cfg)..."
-  if ! run_logged tty "$work/switch.log" sudo darwin-rebuild switch --flake ".#$cfg"; then
+  if ! run_logged sudo-tty "$work/switch.log" darwin-rebuild switch --flake ".#$cfg"; then
     error "Activation failed after a successful build, so this is an activation-time problem (usually Homebrew).
 Full log:        $work/switch.log
 Retry with:      macsetup rebuild
 Or go back with: cp $work/flake.lock.before flake.lock && macsetup rebuild"
   fi
-  sudo_stop
+  homebrew_upgrade
   gc
+  sudo_stop
   rm -rf "$work"
   info "Update complete."
   if [ -n "$changes" ]; then

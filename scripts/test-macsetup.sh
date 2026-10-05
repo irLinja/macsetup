@@ -16,6 +16,7 @@ fails=0
 pass() { echo "  ok   $1"; }
 fail() { echo "  FAIL $1"; echo "       expected: $2"; echo "       actual:   $3"; fails=$((fails + 1)); }
 assert_eq() { if [[ "$2" == "$3" ]]; then pass "$1"; else fail "$1" "$2" "$3"; fi; }
+assert_contains() { if [[ "$3" == *"$2"* ]]; then pass "$1"; else fail "$1" "...$2..." "$3"; fi; }
 assert_true()  { if "$@"; then pass "$*"; else fail "$*" "exit 0" "non-zero"; fi; }
 assert_false() { if "$@"; then fail "$*" "non-zero" "exit 0"; else pass "$*"; fi; }
 
@@ -119,6 +120,190 @@ TXT
 assert_eq "outdated: prints daemon and latest" "3.16.0 3.22.5" "$(parse_determinate_versions "$tmp/dn1.txt")"
 printf 'Determinate Nixd daemon version: 3.22.5\nDeterminate Nixd client version: 3.22.5\n' > "$tmp/dn2.txt"
 assert_eq "current: latest falls back to daemon version" "3.22.5 3.22.5" "$(parse_determinate_versions "$tmp/dn2.txt")"
+
+# ---------------------------------------------------------------------------
+# Stubs for the external commands the orchestration helpers drive. Each stub
+# appends what it was asked to do to $CALLS, so a test can check exactly which
+# commands ran, in what order, and whether they went through sudo. The point
+# of most of these tests: every sudo call must happen directly in macsetup's
+# own terminal session -- inside `script` or under activation it runs in a
+# new session, and sudo asks for approval all over again.
+# ---------------------------------------------------------------------------
+stubs="$tmp/stubs"
+mkdir -p "$stubs"
+export CALLS="$tmp/calls.log"
+
+cat > "$stubs/sudo" <<'STUB'
+#!/bin/bash
+echo "sudo $*" >> "$CALLS"
+case "$1" in -v|-k|-n) exit 0 ;; esac
+exec "$@"
+STUB
+
+cat > "$stubs/script" <<'STUB'
+#!/bin/bash
+# script -q -t 0 LOG CMD...
+echo "script $*" >> "$CALLS"
+shift 3
+log="$1"
+shift
+"$@" > "$log" 2>&1
+STUB
+
+cat > "$stubs/determinate-nixd" <<'STUB'
+#!/bin/bash
+case "$1" in
+  version) cat "$DN_VERSION_FILE" ;;
+  upgrade)
+    echo "determinate-nixd upgrade" >> "$CALLS"
+    [ -z "${DN_UPGRADE_FAIL:-}" ] || exit 1
+    printf 'Determinate Nixd daemon version: %s\nDeterminate Nixd client version: %s\n' \
+      "$DN_LATEST" "$DN_LATEST" > "$DN_VERSION_FILE"
+    ;;
+esac
+STUB
+
+cat > "$stubs/darwin-rebuild" <<'STUB'
+#!/bin/bash
+echo "darwin-rebuild $*" >> "$CALLS"
+if [ -n "${DR_FAIL_FIRST:-}" ] && [ ! -e "$DR_FAIL_FIRST" ]; then
+  : > "$DR_FAIL_FIRST"
+  printf 'error:\n       … while calling the '"'"'derivationStrict'"'"' builtin\n       error: polling file descriptor: Invalid argument\n'
+  exit 1
+fi
+STUB
+
+cat > "$stubs/brew" <<'STUB'
+#!/bin/bash
+echo "brew $* (PATH starts ${PATH%%:*})" >> "$CALLS"
+if [ -n "${BREW_FAIL:-}" ]; then
+  echo "==> Upgrading microsoft-outlook"
+  echo "Error: Download failed on Cask 'microsoft-outlook' with message: Download failed: https://go.microsoft.com/fwlink/?linkid=525137" >&2
+  echo "Installing microsoft-outlook has failed!"
+  exit 1
+fi
+STUB
+
+chmod +x "$stubs"/*
+
+# in_stubs CMD... -- run CMD in a subshell with the stubs first on PATH (or
+# $STUB_PATH instead), an empty call log and errexit on, as in macsetup itself.
+# stdout -> $tmp/out, stderr -> $tmp/err; prints CMD's exit status.
+in_stubs() {
+  : > "$CALLS"
+  set +e
+  ( set -e; PATH="${STUB_PATH:-$stubs:$PATH}"; "$@" ) >"$tmp/out" 2>"$tmp/err"
+  local rc=$?
+  set -e
+  echo "$rc"
+}
+
+# dn_version DAEMON [LATEST] -- write a `determinate-nixd version` fixture.
+export DN_VERSION_FILE="$tmp/dn-version.txt" DN_LATEST=3.23.0
+dn_version() {
+  {
+    printf 'Determinate Nixd daemon version: %s\nDeterminate Nixd client version: %s\n' "$1" "$1"
+    if [ -n "${2:-}" ]; then
+      printf 'Latest version: %s\n\nA new version of Determinate Nix is available. Please update Determinate Nix using the command line:\n\n    sudo determinate-nixd upgrade\n' "$2"
+    fi
+    printf '\nThe following features are enabled:\n\n * lazy-trees\n'
+  } > "$DN_VERSION_FILE"
+}
+
+# ---------------------------------------------------------------------------
+echo "upgrade_determinate_nix"
+# ---------------------------------------------------------------------------
+dn_version 3.16.0 3.23.0
+rc="$(in_stubs upgrade_determinate_nix)"
+assert_eq "behind: upgrades exactly once, through sudo" \
+  $'sudo determinate-nixd upgrade\ndeterminate-nixd upgrade' "$(cat "$CALLS")"
+assert_eq "behind: succeeds" 0 "$rc"
+
+dn_version 3.23.0
+rc="$(in_stubs upgrade_determinate_nix)"
+assert_eq "current: no upgrade and no sudo" "" "$(cat "$CALLS")"
+assert_eq "current: succeeds" 0 "$rc"
+
+dn_version 3.16.0 3.23.0
+export DN_UPGRADE_FAIL=1
+rc="$(in_stubs upgrade_determinate_nix)"
+unset DN_UPGRADE_FAIL
+assert_eq "failed upgrade (offline, server trouble) does not stop the update" 0 "$rc"
+assert_contains "failed upgrade is reported" "WARNING" "$(cat "$tmp/err")"
+
+mkdir -p "$tmp/stubs-no-dn"
+cp "$stubs/sudo" "$tmp/stubs-no-dn/"
+STUB_PATH="$tmp/stubs-no-dn:/usr/bin:/bin:/usr/sbin:/sbin"
+rc="$(in_stubs upgrade_determinate_nix)"
+unset STUB_PATH
+assert_eq "no determinate-nixd (plain Nix install): nothing to do" "" "$(cat "$CALLS")"
+assert_eq "no determinate-nixd: succeeds" 0 "$rc"
+
+# ---------------------------------------------------------------------------
+echo "sudo_start / sudo_stop"
+# ---------------------------------------------------------------------------
+sudo_cycle() {
+  sudo_start
+  local pid="$SUDO_KEEPALIVE_PID"
+  sudo_stop
+  if kill -0 "$pid" 2>/dev/null; then echo "keep-alive running"; else echo "keep-alive stopped"; fi
+}
+rc="$(in_stubs sudo_cycle)"
+assert_eq "asks once up front, revokes the approval on stop" $'sudo -v\nsudo -k' "$(cat "$CALLS")"
+assert_eq "keep-alive loop is gone after stop" "keep-alive stopped" "$(tail -n1 "$tmp/out")"
+assert_eq "cycle succeeds" 0 "$rc"
+
+# ---------------------------------------------------------------------------
+echo "run_logged sudo-tty"
+# ---------------------------------------------------------------------------
+rc="$(in_stubs run_logged sudo-tty "$tmp/switch.log" darwin-rebuild switch --flake ".#test")"
+assert_eq "sudo is outermost, so it runs in this session and reuses the approval" \
+  "sudo script -q -t 0 $tmp/switch.log darwin-rebuild switch --flake .#test" "$(head -n1 "$CALLS")"
+assert_eq "command runs and succeeds" $'darwin-rebuild switch --flake .#test\n0' \
+  "$(grep '^darwin-rebuild' "$CALLS")"$'\n'"$rc"
+
+export DR_FAIL_FIRST="$tmp/dr-failed-once"
+rc="$(in_stubs run_logged sudo-tty "$tmp/switch.log" darwin-rebuild switch --flake ".#test")"
+unset DR_FAIL_FIRST
+assert_eq "retries the transient daemon-socket error" 2 "$(grep -c '^darwin-rebuild' "$CALLS")"
+assert_eq "succeeds on the retry" 0 "$rc"
+
+# ---------------------------------------------------------------------------
+echo "homebrew_upgrade"
+# ---------------------------------------------------------------------------
+mkdir -p "$tmp/system"
+cat > "$tmp/system/activate" <<'TXT'
+# Homebrew Bundle
+echo >&2 "Homebrew bundle..."
+if [ -f "/opt/homebrew/bin/brew" ]; then
+  PATH="/opt/homebrew/bin:/nix/store/l7c8zj12kzc4fv3rkz2nzw0czkvlxksz-mas-7.0.0/bin:$PATH" sudo --preserve-env=PATH --user=arash --set-home env brew bundle --file='/nix/store/lmrcdn5f747096fwcmq25lk44fk7cgp6-Brewfile' --no-upgrade --zap --force-cleanup
+else
+  echo -e "\e[1;31merror: Homebrew is not installed, skipping...\e[0m" >&2
+fi
+TXT
+# shellcheck disable=SC2034  # read by homebrew_upgrade, sourced from ./macsetup
+CURRENT_SYSTEM="$tmp/system"
+# shellcheck disable=SC2034
+HOMEBREW_BIN="$stubs/brew"
+
+rc="$(in_stubs homebrew_upgrade)"
+assert_eq "runs brew directly in this session, never through sudo" "brew" "$(cut -d' ' -f1 "$CALLS" | sort -u)"
+assert_contains "installs/upgrades from the Brewfile activation used" \
+  "bundle --file=/nix/store/lmrcdn5f747096fwcmq25lk44fk7cgp6-Brewfile" "$(cat "$CALLS")"
+assert_contains "puts activation's mas first on PATH (mas is not on the user's PATH)" \
+  "(PATH starts /nix/store/l7c8zj12kzc4fv3rkz2nzw0czkvlxksz-mas-7.0.0/bin)" "$(cat "$CALLS")"
+assert_eq "succeeds" 0 "$rc"
+
+export BREW_FAIL=1
+rc="$(in_stubs homebrew_upgrade)"
+unset BREW_FAIL
+assert_eq "a failed cask upgrade does not fail the run (the system is already switched)" 0 "$rc"
+assert_contains "the closing warning names the failed cask" "microsoft-outlook" "$(cat "$tmp/err")"
+
+printf '#!/bin/sh\n# configuration without Homebrew\n' > "$tmp/system/activate"
+rc="$(in_stubs homebrew_upgrade)"
+assert_eq "no Brewfile in the activated system: brew is not run" "" "$(cat "$CALLS")"
+assert_eq "no Brewfile: succeeds" 0 "$rc"
 
 # ---------------------------------------------------------------------------
 echo
