@@ -35,6 +35,10 @@ DETERMINATE_NIX_MIN_OK="3.22.0"
 CURRENT_SYSTEM="/run/current-system"
 HOMEBREW_BIN="/opt/homebrew/bin/brew"
 
+# How long to wait for the Nix daemon to come back after an upgrade.
+NIX_DAEMON_WAIT_TRIES=90
+NIX_DAEMON_POLL_SECONDS=1
+
 # ---------------------------------------------------------------------------
 # Output helpers
 # ---------------------------------------------------------------------------
@@ -180,24 +184,32 @@ restore_lock() {
 # ---------------------------------------------------------------------------
 
 SUDO_KEEPALIVE_PID=""
+SUDO_STARTED=false
 
 # Ask once, right away, and keep that one approval alive for the whole run so
 # a long build never ends in a second prompt that nobody is there to answer.
 # sudo ties an approval to this terminal session, so only commands macsetup
 # runs itself, directly, can reuse it (see run_logged sudo-tty and
-# homebrew_upgrade). sudo_stop revokes it: nothing outlives the run.
+# appstore_upgrade). Every `brew` start revokes it (brew.sh), which is why
+# finish_switch runs Homebrew last. sudo_stop revokes it: nothing outlives
+# the run.
 sudo_start() {
   info "sudo is needed once for this run; the approval is revoked when macsetup exits."
   sudo -v || error "sudo authentication failed"
+  SUDO_STARTED=true
   ( while sleep 60; do sudo -n -v 2>/dev/null || exit 0; done ) &
   SUDO_KEEPALIVE_PID=$!
 }
 
+# Safe to call more than once: the EXIT trap calls it again after
+# homebrew_upgrade, which may have taken an approval of its own.
 sudo_stop() {
   if [ -n "$SUDO_KEEPALIVE_PID" ]; then
     kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
     wait "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
     SUDO_KEEPALIVE_PID=""
+  fi
+  if [ "$SUDO_STARTED" = true ]; then
     sudo -k 2>/dev/null || true
   fi
 }
@@ -374,40 +386,106 @@ upgrade_determinate_nix() {
     warn "Determinate Nix upgrade failed; continuing on $daemon."
     return 0
   fi
-  versions="$(determinate_nix_versions || true)"
-  if [ -n "$versions" ]; then
-    info "Determinate Nix is now ${versions%% *}."
+  if ! wait_for_determinate_nix "$latest"; then
+    warn "The Nix daemon did not come back on $latest within ${NIX_DAEMON_WAIT_TRIES}s; continuing."
+    return 0
+  fi
+  info "Determinate Nix is now $latest."
+}
+
+# wait_for_determinate_nix VERSION -- block until the daemon reports VERSION
+# and answers store requests. `determinate-nixd upgrade` returns before
+# launchd restarts the daemon: on 2026-10-05 it came back 21 s later and took
+# the `nix flake update` that had already started down with it.
+wait_for_determinate_nix() {
+  local want="$1" tries="$NIX_DAEMON_WAIT_TRIES" versions
+  while [ "$tries" -gt 0 ]; do
+    versions="$(determinate_nix_versions || true)"
+    if [ "${versions%% *}" = "$want" ] && nix store info >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$NIX_DAEMON_POLL_SECONDS"
+    tries=$((tries - 1))
+  done
+  return 1
+}
+
+# The `brew bundle` line in the activated system's activate script, and what
+# it names: the Brewfile, and the mas that nix-darwin puts on its PATH (mas is
+# not on the user's PATH).
+activation_bundle_line() {
+  grep -m1 'brew bundle --file=' "$CURRENT_SYSTEM/activate" 2>/dev/null || true
+}
+
+activated_brewfile() {
+  activation_bundle_line | sed -n "s/.*brew bundle --file='\([^']*\)'.*/\1/p"
+}
+
+activated_mas() {
+  local dir
+  dir="$(activation_bundle_line | sed -n 's/^[[:space:]]*PATH="\([^"]*\)".*/\1/p' | tr ':' '\n' \
+    | grep -E -- '-mas-[^/]*/bin$' | head -n1 || true)"
+  if [ -n "$dir" ] && [ -x "$dir/mas" ]; then
+    echo "$dir/mas"
   fi
 }
 
-# homebrew_upgrade -- install and upgrade everything in the Brewfile of the
-# system activation just switched to. Activation itself only runs
-# `brew bundle --no-upgrade` (modules/darwin/homebrew.nix): it runs Homebrew in
-# a terminal session of its own, where every cask with a root installer asked
-# for sudo again. From here, Homebrew's sudo calls share this session and
-# reuse sudo_start's approval. Uses activation's PATH additions, since mas is
-# not on the user's PATH. Never fails the caller: the system is already
-# switched, so a failed download is a warning, not a failed run.
-homebrew_upgrade() {
-  local activate="$CURRENT_SYSTEM/activate" brewfile masbin log
-  [ -x "$HOMEBREW_BIN" ] || return 0
-  brewfile="$(grep -o -E '/nix/store/[a-z0-9]{32}-Brewfile' "$activate" 2>/dev/null | head -n1 || true)"
-  if [ -z "$brewfile" ]; then
-    warn "No Brewfile in $activate; skipping Homebrew upgrades."
+# appstore_upgrade -- update the Mac App Store apps the Brewfile declares.
+# mas needs root for this and reuses this session's sudo approval, so it has
+# to run while macsetup still holds one -- before homebrew_upgrade, since
+# every `brew` start revokes it. A failed update only warns.
+appstore_upgrade() {
+  local brewfile ids mas
+  brewfile="$(activated_brewfile)"
+  [ -n "$brewfile" ] || return 0
+  ids="$(sed -n 's/^mas .*, id: *\([0-9][0-9]*\).*/\1/p' "$brewfile" 2>/dev/null | tr '\n' ' ' || true)"
+  [ -n "${ids// /}" ] || return 0
+  mas="$(activated_mas)"
+  if [ -z "$mas" ]; then
+    warn "No mas in the activated system; skipping App Store updates."
     return 0
   fi
-  masbin="$(grep -o -E '/nix/store/[a-z0-9]{32}-mas-[^/":]*/bin' "$activate" 2>/dev/null | head -n1 || true)"
-  info "Upgrading Homebrew packages..."
+  [ -n "$("$mas" outdated 2>/dev/null || true)" ] || return 0
+  info "Updating App Store apps..."
+  # shellcheck disable=SC2086  # one numeric app ID per word
+  "$mas" update $ids || warn "Some App Store updates failed; retry with: $mas update"
+}
+
+# homebrew_upgrade -- upgrade Homebrew formulae and casks in ONE `brew
+# upgrade` process. Every `brew` start revokes this session's sudo approval
+# (brew.sh runs `sudo --reset-timestamp`), and `brew bundle` starts a separate
+# `brew upgrade --cask` per cask, so each cask with a root installer asked
+# again. One process resets once: Homebrew asks at most once, and only when a
+# cask needs root. Only for systems whose activation manages Homebrew. Never
+# fails the caller: the system is already switched, so a failed download is a
+# warning, not a failed run.
+homebrew_upgrade() {
+  local log
+  [ -x "$HOMEBREW_BIN" ] || return 0
+  if [ -z "$(activated_brewfile)" ]; then
+    warn "Activation does not run brew bundle; skipping Homebrew upgrades."
+    return 0
+  fi
+  info "Upgrading Homebrew packages (Homebrew asks for sudo itself if one needs root)..."
   log="$(mktemp -t macsetup-brew)"
-  if PATH="${masbin:+$masbin:}$PATH" HOMEBREW_NO_AUTO_UPDATE=1 \
-    "$HOMEBREW_BIN" bundle --file="$brewfile" --quiet 2>&1 | tee "$log"; then
+  if HOMEBREW_NO_AUTO_UPDATE=1 "$HOMEBREW_BIN" upgrade 2>&1 | tee "$log"; then
     rm -f "$log"
     return 0
   fi
-  warn "Some Homebrew packages failed to install or upgrade:"
+  warn "Some Homebrew packages failed to upgrade:"
   grep -E '^Error' "$log" >&2 || true
   warn "The system itself is up to date. Retry the rest with: brew upgrade   (full log: $log)"
   return 0
+}
+
+# finish_switch -- everything after a successful activation, in the only order
+# that keeps it to one approval: what needs macsetup's approval first, then
+# revoke it, then Homebrew, whose every start revokes approvals anyway.
+finish_switch() {
+  appstore_upgrade
+  gc
+  sudo_stop
+  homebrew_upgrade
 }
 
 # ---------------------------------------------------------------------------
@@ -423,11 +501,11 @@ Usage: macsetup <command> [args]
 Commands:
   bootstrap     First-time setup (install Nix + nix-darwin) [--force]
   rebuild       Apply configuration changes (darwin-rebuild switch), then
-                install/upgrade Homebrew packages
+                upgrade App Store and Homebrew packages
   update        Upgrade Determinate Nix when a newer release exists, update
-                flake inputs, build, then switch and upgrade Homebrew
-                packages. If the new inputs fail to evaluate or build,
-                flake.lock is restored and the system is left untouched.
+                flake inputs, build, then switch and upgrade App Store and
+                Homebrew packages. If the new inputs fail to evaluate or
+                build, flake.lock is restored and the system is left untouched.
                   [input...]             update only these inputs
                   --build-only           update + build, do not switch
                   --allow-heavy-builds   allow multi-hour toolchain builds
@@ -445,7 +523,8 @@ After rebuild, update, rollback, and switch, old generations are
 automatically pruned (keeping the last 3) and garbage collected.
 
 rebuild and update ask for sudo once, at the start, and revoke the approval
-when they exit.
+when done. Homebrew revokes sudo approvals whenever it starts, so it may ask
+once more at the very end, only when a package with a root installer updates.
 EOF
 }
 
@@ -484,9 +563,7 @@ cmd_rebuild() {
   if ! run_logged sudo-tty "$work/switch.log" darwin-rebuild switch --flake ".#$cfg"; then
     error "Rebuild failed. Full log: $work/switch.log"
   fi
-  homebrew_upgrade
-  gc
-  sudo_stop
+  finish_switch
   rm -rf "$work"
   info "Rebuild complete."
 }
@@ -562,14 +639,9 @@ Full log:        $work/switch.log
 Retry with:      macsetup rebuild
 Or go back with: cp $work/flake.lock.before flake.lock && macsetup rebuild"
   fi
-  homebrew_upgrade
-  gc
-  sudo_stop
+  finish_switch
   rm -rf "$work"
   info "Update complete."
-  if [ -n "$changes" ]; then
-    info "Commit the new pins:  git commit -m 'chore: update flake.lock' flake.lock"
-  fi
 }
 
 cmd_doctor() {
