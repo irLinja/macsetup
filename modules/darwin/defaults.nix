@@ -22,7 +22,7 @@ in
       "/Applications/Slack.app"
       "/Applications/Ghostty.app"
       "/Applications/Spotify.app"
-      "/Applications/YouTube Music Desktop App.app"
+      "/Applications/Nix Apps/YouTube Music Desktop App.app"
     ];
   };
 
@@ -117,19 +117,21 @@ in
   system.activationScripts.postActivation.text = ''
     killall Dock 2>/dev/null || true
 
-    # Strip quarantine flag from casks that fail Gatekeeper checks.
-    for app in "YouTube Music Desktop App" "Headlamp"; do
-      if [[ -d "/Applications/$app.app" ]]; then
-        xattr -dr com.apple.quarantine "/Applications/$app.app" 2>/dev/null || true
-      fi
-    done
+    # Strip the quarantine flag from Headlamp, which fails Gatekeeper checks.
+    if [[ -d "/Applications/Headlamp.app" ]]; then
+      xattr -dr com.apple.quarantine "/Applications/Headlamp.app" 2>/dev/null || true
+    fi
 
-    # YTMDesktop ships with an ad-hoc signature (Info.plist not bound),
-    # which prevents Electron Safe Storage from accessing the keychain.
-    # Without keychain access, encrypted cookies can't persist and the
-    # app logs out on every relaunch. Ad-hoc re-signing fixes this.
-    if [[ -d "/Applications/YouTube Music Desktop App.app" ]]; then
-      codesign --force --deep --sign - "/Applications/YouTube Music Desktop App.app" 2>/dev/null || true
+    # YTMDesktop (nixpkgs, packages.nix) is only linker-signed: Info.plist
+    # not bound, no sealed resources, the same defect the old Homebrew build
+    # had. That keeps Electron Safe Storage out of the keychain, so encrypted
+    # cookies can't persist and the app logs out on every relaunch. Ad-hoc
+    # re-signing fixes this. nix-darwin's rsync puts the unsigned files back
+    # on every switch, so this runs every time; the signature comes out the
+    # same, so the keychain grant lasts until ytmdesktop itself changes.
+    ytmd="/Applications/Nix Apps/YouTube Music Desktop App.app"
+    if [[ -d "$ytmd" ]] && ! codesign --force --deep --sign - "$ytmd" 2>/dev/null; then
+      echo "warning: could not re-sign $ytmd; it will log out on every relaunch" >&2
     fi
 
     # kotlin-lsp (JetBrains Kotlin Language Server) is a CLI cask under

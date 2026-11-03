@@ -1,24 +1,15 @@
 { ... }: {
-  # Homebrew 6.0 makes tap-trust checks the default (HOMEBREW_REQUIRE_TAP_TRUST),
-  # refusing to load formulae/casks from non-official taps until `brew trust` has
-  # been run interactively. That breaks `brew bundle` during activation for our
-  # third-party taps (ariga, peonping, tfversion, theboredteam) -- e.g.
-  # "Refusing to load formula ariga/tap/atlas from untrusted tap ariga/tap".
-  #
-  # Those taps are pinned flake inputs managed by nix-homebrew with
-  # `mutableTaps = false`, so their provenance is already locked and an
-  # interactive per-tap trust prompt is redundant friction. Disable the
-  # requirement via Homebrew's system-wide env file.
-  #
-  # /etc/homebrew/brew.env is sourced first by `brew` (before the prefix/user env
-  # files) and is materialised by nix-darwin's /etc activation BEFORE the Homebrew
-  # bundle step, so it takes effect on the first rebuild and on fresh machines.
-  # (A Home Manager file would be written only AFTER `brew bundle` runs -- too
-  # late, and the bundle failure aborts activation under `set -e`.)
-  environment.etc."homebrew/brew.env".text = ''
-    HOMEBREW_NO_REQUIRE_TAP_TRUST=1
-  '';
-
+  # Tap trust: Homebrew refuses to load formulae/casks from non-official taps
+  # that have not been trusted. nix-darwin writes every `brews`/`casks` entry
+  # below into the Brewfile as `trusted: true`, and `brew bundle` records those
+  # in ~/.homebrew/trust.json before it loads anything (`--force-cleanup` then
+  # rewrites the file to exactly the Brewfile's entries). A fully-qualified tap
+  # entry ("ariga/tap/atlas") therefore needs no extra step, on fresh machines
+  # too. Do not bring back HOMEBREW_NO_REQUIRE_TAP_TRUST: brew 7 deprecated it
+  # (a warning on every brew run), and it switched the check off for every tap,
+  # not just these. If XDG_CONFIG_HOME is ever exported, interactive brew reads
+  # $XDG_CONFIG_HOME/homebrew/trust.json, which activation (sudo, clean
+  # environment) never writes.
   homebrew = {
     enable = true;
 
@@ -70,6 +61,7 @@
       "headlamp"                    # Kubernetes web UI
       "kotlin-lsp"                  # Official Kotlin Language Server (JetBrains; needs JDK -> temurin@25)
       "rancher"                     # Rancher Desktop (container management)
+      "session-manager-plugin"      # AWS SSM Session Manager plugin for the AWS CLI (root pkg installer)
       "temurin@25"                  # Eclipse Temurin JDK 25 (Adoptium)
       "visual-studio-code"          # Code editor
 
@@ -89,13 +81,13 @@
       # -- Media --
       "iina"                        # Media player
       "spotify"                     # Music streaming
-      "ytmdesktop-youtube-music"    # YouTube Music desktop client
+      # "ytmdesktop-youtube-music" -- disabled 2026-09-01 (fails Gatekeeper) and stuck at 2.0.11; nixpkgs ytmdesktop instead (modules/darwin/packages.nix)
 
       # -- Security --
       "1password"                   # Password manager (must be in /Applications for SSH agent)
       "1password-cli"               # 1Password command-line tool (op)
       "openvpn-connect"             # OpenVPN client
-      "shadowsocksx-ng"             # ShadowsocksX-NG proxy
+      "shadowsocksx-ng"             # ShadowsocksX-NG proxy -- cask disabled 2026-09-01 (fails Gatekeeper), kept on purpose: brew keeps the installed 1.10.3 but refuses to install it on a new Mac
       "yubico-authenticator"        # YubiKey Authenticator
 
       # -- Internet --
@@ -137,7 +129,8 @@
       "kubelogin"                 # Azure K8s credential plugin
       "checkov"                   # IaC static analysis / security scanner
       "opentofu"                  # Open-source Terraform alternative
-      "terraform"                 # Infrastructure as Code
+      "pulumi"                    # Infrastructure as Code in general-purpose languages
+      # "terraform" -- not in homebrew-core (hashicorp/tap only); tfversion (Tap Packages) manages it, and a brew copy shadows ~/.tfversion/bin in interactive shells
       "terraform-docs"            # Terraform documentation generator
       "terraform-mcp-server"      # MCP server for Terraform
       "tflint"                    # Terraform linter
@@ -172,8 +165,14 @@
       # -- Languages & Build Tools --
       "gradle"                    # JVM build automation tool (Groovy/Kotlin DSL)
 
+      # -- Databases --
+      "mysql-client"              # MySQL CLI (keg-only: mysql is not linked into /opt/homebrew/bin)
+
       # -- macOS --
       "terminal-notifier"         # macOS notification CLI -- on brew (bottled), not nixpkgs: cctools ld SIGTRAPs linking it from source on the current nixpkgs pin
+
+      # -- Security --
+      "age"                       # Simple, modern file encryption (age, age-keygen)
 
       # -- Linting & Code Generation --
       "actionlint"                # GitHub Actions workflow linter
