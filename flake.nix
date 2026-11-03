@@ -27,16 +27,24 @@
 
     # Homebrew itself -- must be new enough for the DSL used by the taps below
     # (nix-homebrew's own pin can lag); bump this tag when a cask or formula
-    # fails activation as "unreadable: unknown keyword".
+    # is "unreadable" (`unknown keyword`, `undefined method ... for an instance
+    # of Symbol`). 2026-10-21: homebrew-core started declaring test-only
+    # resources (`resource "x", :test do`, new in brew 7.0.9); 7.0.4 took :test
+    # for the resource class and died on `:test.new`. 7.0.4 -> 7.0.10.
+    # 2026-11-03: homebrew-cask started writing `zap :not_required` (47 casks);
+    # `Zap.from_args(cask, **directives)` before 7.0.11 took the symbol as a
+    # second positional argument: `Cask 'kotlin-lsp' definition is invalid:
+    # invalid 'zap' stanza: wrong number of arguments (given 2, expected 1)`
+    # and activation aborted. 7.0.10 -> 7.0.12.
     #
-    # Keep this in step with nix-homebrew's own brew-src pin: nix-homebrew
-    # vendors a copy of brew's bin/brew tail, so a mismatch breaks activation.
-    # 2026-09-22: nix-homebrew e0fdde28 regenerated that tail from brew 7.0.4,
-    # which dropped HOMEBREW_ORIGINAL_BREW_FILE; brew 6.0.17's startup/config.rb
-    # still did ENV.fetch on it, so every Ruby-backed brew command died with
-    # `key not found: "HOMEBREW_ORIGINAL_BREW_FILE" (KeyError)`. 6.0.17 -> 7.0.4.
+    # nix-homebrew also copies the tail of its own release's bin/brew into the
+    # wrapper it generates, so this release must have the same tail or every
+    # Ruby-backed brew command dies during activation (2026-09-22: brew 6.0.17
+    # still needed HOMEBREW_ORIGINAL_BREW_FILE, which nix-homebrew's 7.0.4 tail
+    # no longer exported -- KeyError). A newer tag with an unchanged bin/brew
+    # is fine; `macsetup doctor`, `update` and `rebuild` compare the tails.
     brew-src = {
-      url = "github:Homebrew/brew/7.0.4";
+      url = "github:Homebrew/brew/7.0.12";
       flake = false;
     };
 
