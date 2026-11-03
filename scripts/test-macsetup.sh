@@ -123,13 +123,87 @@ printf 'Determinate Nixd daemon version: 3.22.5\nDeterminate Nixd client version
 assert_eq "current: latest falls back to daemon version" "3.22.5 3.22.5" "$(parse_determinate_versions "$tmp/dn2.txt")"
 
 # ---------------------------------------------------------------------------
+echo "brew_tail_matches"
+# ---------------------------------------------------------------------------
+# Cut down from Homebrew's bin/brew (7.0.x) and nix-homebrew's brew.tail.sh.
+cat > "$tmp/bin-brew-7" <<'TXT'
+#!/bin/bash
+HOMEBREW_PREFIX="$(cd "$(dirname "$0")/.." && pwd)"
+HOMEBREW_LIBRARY="${HOMEBREW_REPOSITORY}/Library"
+
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export_homebrew_env_file "/etc/homebrew/brew.env"
+exec "${HOMEBREW_LIBRARY}/Homebrew/brew.sh" "$@"
+TXT
+# 6.0.x still exported HOMEBREW_ORIGINAL_BREW_FILE, which 7.0 dropped.
+cat > "$tmp/bin-brew-6" <<'TXT'
+#!/bin/bash
+HOMEBREW_LIBRARY="${HOMEBREW_REPOSITORY}/Library"
+
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export HOMEBREW_ORIGINAL_BREW_FILE="$0"
+export_homebrew_env_file "/etc/homebrew/brew.env"
+exec "${HOMEBREW_LIBRARY}/Homebrew/brew.sh" "$@"
+TXT
+cat > "$tmp/brew.tail.sh" <<'TXT'
+# -----
+# The following is copied from upstream bin/brew
+# Copyright (c) 2009-present, Homebrew contributors
+# -----
+
+# nix-homebrew:
+# Run scripts/update-brew-tail.sh to update this
+
+PATH="@runtimePath@:/usr/bin:/bin:/usr/sbin:/sbin"
+export_homebrew_env_file "/etc/homebrew/brew.env"
+exec "${HOMEBREW_LIBRARY}/Homebrew/brew.sh" "$@"
+TXT
+assert_true  brew_tail_matches "$tmp/bin-brew-7" "$tmp/brew.tail.sh"
+assert_false brew_tail_matches "$tmp/bin-brew-6" "$tmp/brew.tail.sh"
+assert_false brew_tail_matches "$tmp/no-such-bin-brew" "$tmp/brew.tail.sh"
+sed 's|^# The following is copied.*|# Copied from bin/brew|' "$tmp/brew.tail.sh" > "$tmp/brew.tail-new-header.sh"
+assert_true  brew_tail_matches "$tmp/bin-brew-7" "$tmp/brew.tail-new-header.sh"
+
+# ---------------------------------------------------------------------------
+echo "outdated_names / name_list / brew_dsl_errors"
+# ---------------------------------------------------------------------------
+cat > "$tmp/outdated.json" <<'JSON'
+{"formulae":[{"name":"jq","installed_versions":["1.8.0"],"current_version":"1.8.1","pinned":false,"pinned_version":null},
+             {"name":"harfbuzz","installed_versions":["14.5.1"],"current_version":"14.6.0","pinned":false,"pinned_version":null},
+             {"name":"terraform","installed_versions":["1.5.7"],"current_version":"1.14.0","pinned":true,"pinned_version":"1.5.7"}],
+ "casks":[{"name":"slack","installed_versions":["4.52.171"],"current_version":"4.52.182","pinned":false,"pinned_version":null}]}
+JSON
+assert_eq "the formulae brew upgrade acts on, sorted; pinned ones left out" \
+  $'harfbuzz\njq' "$(outdated_names "$tmp/outdated.json" formulae)"
+assert_eq "the casks" "slack" "$(outdated_names "$tmp/outdated.json" casks)"
+assert_eq "not JSON: nothing" "" "$(echo 'Error: oops' > "$tmp/not.json"; outdated_names "$tmp/not.json" casks)"
+
+assert_eq "short list in full" "a, b, c" "$(printf 'a\nb\nc\n' | name_list 8)"
+assert_eq "long list capped" "a, b and 3 more" "$(printf 'a\nb\nc\nd\ne\n' | name_list 2)"
+assert_eq "one package" "1 package" "$(packages 1)"
+assert_eq "more packages" "61 packages" "$(packages 61)"
+
+cat > "$tmp/brew-upgrade.log" <<'TXT'
+==> Upgrading 2 outdated packages:
+Error: homebrew/core/zlib-ng-compat: undefined method 'new' for an instance of Symbol
+Error: Download failed on Cask 'microsoft-outlook' with message: Download failed: https://go.microsoft.com/fwlink/?linkid=525137
+Error: Cask 'gcloud-cli' is unreadable: unknown keyword: :network_access
+Error: homebrew/core/zlib-ng-compat: undefined method 'new' for an instance of Symbol
+TXT
+assert_eq "Ruby rejecting newer DSL (2026-10-21, 2026-08-13) is told apart from a failed download" \
+  "Error: homebrew/core/zlib-ng-compat: undefined method 'new' for an instance of Symbol"$'\n'"Error: Cask 'gcloud-cli' is unreadable: unknown keyword: :network_access" \
+  "$(brew_dsl_errors "$tmp/brew-upgrade.log")"
+assert_eq "a log with only a failed download: none" "" \
+  "$(grep 'Download failed' "$tmp/brew-upgrade.log" > "$tmp/download.log"; brew_dsl_errors "$tmp/download.log")"
+
+# ---------------------------------------------------------------------------
 # Stubs for the external commands the orchestration helpers drive. Each stub
 # appends what it was asked to do to $CALLS, so a test can check exactly which
 # commands ran, in what order, and whether they went through sudo. The point
 # of most of these tests: one approval per run. Every sudo call must happen
 # directly in macsetup's own terminal session (inside `script` or under
 # activation it runs in a new session and asks again), and nothing that needs
-# that approval may run after `brew` starts (brew.sh revokes it every time).
+# that approval may run after `brew` starts (brew revokes it).
 # ---------------------------------------------------------------------------
 stubs="$tmp/stubs"
 mkdir -p "$stubs"
@@ -180,9 +254,15 @@ case "$1" in
 esac
 STUB
 
+# `nix flake prefetch --json github:OWNER/REPO/REV` answers with the store path
+# $PREFETCH_ROOT/REPO when PREFETCH_ROOT is set.
 cat > "$stubs/nix" <<'STUB'
 #!/bin/bash
 echo "nix $*" >> "$CALLS"
+if [ "${1:-} ${2:-} ${3:-}" = "flake prefetch --json" ] && [ -n "${PREFETCH_ROOT:-}" ]; then
+  repo="${4#github:*/}"
+  printf '{"storePath":"%s"}\n' "$PREFETCH_ROOT/${repo%%/*}"
+fi
 STUB
 
 cat > "$stubs/nix-env" <<'STUB'
@@ -214,15 +294,43 @@ if [ -n "${DR_FAIL_FIRST:-}" ] && [ ! -e "$DR_FAIL_FIRST" ]; then
 fi
 STUB
 
+# `brew outdated --json=v2` prints $BREW_STATE: what is outdated right now.
+# `brew upgrade --formulae` / `--casks` upgrades every unpinned package of
+# that kind in it, unless BREW_FAIL names the kind. Failing formulae fail the
+# way 2026-10-21 did (brew older than the taps: it dies before upgrading
+# anything); failing casks the way a broken download does (only that cask is
+# left behind).
 cat > "$stubs/brew" <<'STUB'
 #!/bin/bash
 echo "brew $*" >> "$CALLS"
-if [ -n "${BREW_FAIL:-}" ]; then
-  echo "==> Upgrading microsoft-outlook"
-  echo "Error: Download failed on Cask 'microsoft-outlook' with message: Download failed: https://go.microsoft.com/fwlink/?linkid=525137" >&2
-  echo "Installing microsoft-outlook has failed!"
-  exit 1
-fi
+case "$1" in
+  outdated)
+    if [ -n "${BREW_OUTDATED_FAIL:-}" ]; then
+      echo "config.rb:36:in 'fetch': key not found: \"HOMEBREW_ORIGINAL_BREW_FILE\" (KeyError)" >&2
+      exit 1
+    fi
+    cat "$BREW_STATE"
+    ;;
+  upgrade)
+    [ "${HOMEBREW_NO_ASK:-}" = 1 ] || echo "brew stops at: Do you want to proceed with the upgrade? [y/n]" >> "$CALLS"
+    kind="${2#--}"
+    case " ${BREW_FAIL:-} " in
+      *" $kind "*)
+        if [ "$kind" = formulae ]; then
+          echo "Error: homebrew/core/zlib-ng-compat: undefined method 'new' for an instance of Symbol" >&2
+        else
+          echo "==> Upgrading microsoft-outlook"
+          echo "Error: Download failed on Cask 'microsoft-outlook' with message: Download failed: https://go.microsoft.com/fwlink/?linkid=525137" >&2
+          jq '.casks |= map(select(.name == "microsoft-outlook"))' "$BREW_STATE" > "$BREW_STATE.new"
+          mv "$BREW_STATE.new" "$BREW_STATE"
+        fi
+        exit 1
+        ;;
+    esac
+    jq --arg kind "$kind" '.[$kind] |= map(select(.pinned))' "$BREW_STATE" > "$BREW_STATE.new"
+    mv "$BREW_STATE.new" "$BREW_STATE"
+    ;;
+esac
 STUB
 
 chmod +x "$stubs"/*
@@ -381,24 +489,110 @@ HOMEBREW_BIN="$stubs/brew"
 # ---------------------------------------------------------------------------
 echo "homebrew_upgrade"
 # ---------------------------------------------------------------------------
-rc="$(in_stubs homebrew_upgrade)"
-assert_eq "one brew process for all formulae and casks (each brew start revokes sudo approvals)" \
-  "brew upgrade" "$(cat "$CALLS")"
+# Two outdated formulae, two outdated casks, and a pinned formula that
+# `brew upgrade` leaves alone.
+export BREW_STATE="$tmp/brew-state.json"
+outdated_state() { jq '.casks += [{"name":"microsoft-outlook","installed_versions":["16.101"],"current_version":"16.102","pinned":false,"pinned_version":null}]' "$tmp/outdated.json" > "$BREW_STATE"; }
+upgrade_and_shortfall() { homebrew_upgrade; echo "shortfall: ${HOMEBREW_SHORTFALL:-none}"; }
+# The kept logs land in the real per-user temp dir (macOS mktemp -t ignores TMPDIR).
+remove_kept_logs() { rm -rf "$(sed -n 's/^WARNING: Homebrew logs: //p' "$tmp/err")"; }
+# The brew-src pin the advice names, as in today's flake.lock.
+mkdir -p "$tmp/brewrepo"
+echo '{"nodes":{"brew-src":{"original":{"type":"github","owner":"Homebrew","repo":"brew","ref":"7.0.4"}}}}' \
+  > "$tmp/brewrepo/flake.lock"
+# shellcheck disable=SC2034  # read by the sourced ./macsetup functions
+REPO_ROOT="$tmp/brewrepo"
+
+outdated_state
+rc="$(in_stubs upgrade_and_shortfall)"
+assert_eq "formulae, then casks, one brew process each, counted before and after" \
+  $'brew outdated --json=v2\nbrew upgrade --formulae\nbrew upgrade --casks\nbrew outdated --json=v2' "$(cat "$CALLS")"
+assert_eq "never stops at brew's 'Do you want to proceed?' (nobody is there to answer)" \
+  "" "$(grep 'stops at' "$CALLS" || true)"
+assert_contains "says up front how much each process has to do, and which one may ask for sudo" \
+  $'==> Upgrading Homebrew formulae (2 outdated)...\n==> Upgrading Homebrew casks (2 outdated; Homebrew asks for sudo itself if one needs root)...' \
+  "$(grep '^==> Upgrading' "$tmp/out")"
+assert_contains "says everything was upgraded (the pinned formula does not count)" \
+  "Homebrew: upgraded 4 packages, nothing left outdated." "$(cat "$tmp/out")"
+assert_eq "nothing left for the closing line" "shortfall: none" "$(tail -n1 "$tmp/out")"
 assert_eq "succeeds" 0 "$rc"
 
-export BREW_FAIL=1
-rc="$(in_stubs homebrew_upgrade)"
+# 2026-10-21: brew 7.0.4 could not load zlib-ng-compat from the new
+# homebrew-core and died before upgrading anything -- apps included.
+outdated_state
+export BREW_FAIL=formulae
+rc="$(in_stubs upgrade_and_shortfall)"
 unset BREW_FAIL
-assert_eq "a failed cask upgrade does not fail the run (the system is already switched)" 0 "$rc"
-assert_contains "the closing warning names the failed cask" "microsoft-outlook" "$(cat "$tmp/err")"
-# The kept log lands in the real per-user temp dir (macOS mktemp -t ignores TMPDIR).
-rm -f "$(sed -n 's/.*(full log: \(.*\))$/\1/p' "$tmp/err")"
+assert_contains "the casks (apps) still upgrade after the formulae's brew dies" \
+  $'brew upgrade --formulae\nbrew upgrade --casks' "$(cat "$CALLS")"
+assert_contains "says plainly what was not upgraded" \
+  "Homebrew upgraded 2 of 4 outdated packages. Not upgraded: harfbuzz, jq." "$(cat "$tmp/err")"
+assert_contains "names the cause" \
+  "Cause: Homebrew/brew/7.0.4 (brew-src in flake.nix) is older than the taps it reads:" "$(cat "$tmp/err")"
+assert_contains "quotes brew's error" \
+  "    Error: homebrew/core/zlib-ng-compat: undefined method 'new' for an instance of Symbol" "$(cat "$tmp/err")"
+assert_contains "names the fix" \
+  "Fix: pin brew-src to the latest Homebrew/brew release, then run: macsetup rebuild" "$(cat "$tmp/err")"
+assert_eq "the closing line hears about it" \
+  "shortfall: 2 of 4 outdated packages not upgraded" "$(tail -n1 "$tmp/out")"
+assert_eq "does not fail the run (the system is already switched)" 0 "$rc"
+remove_kept_logs
+
+outdated_state
+export BREW_FAIL=casks
+rc="$(in_stubs upgrade_and_shortfall)"
+unset BREW_FAIL
+assert_contains "a failed download leaves only that cask behind" \
+  "Homebrew upgraded 3 of 4 outdated packages. Not upgraded: microsoft-outlook." "$(cat "$tmp/err")"
+assert_contains "and suggests a plain retry" "Retry with: brew upgrade" "$(cat "$tmp/err")"
+assert_eq "no brew-src advice for a failed download" "" "$(grep 'brew-src' "$tmp/err" || true)"
+assert_eq "does not fail the run" 0 "$rc"
+remove_kept_logs
+
+outdated_state
+jq '.casks = []' "$BREW_STATE" > "$BREW_STATE.new" && mv "$BREW_STATE.new" "$BREW_STATE"
+export BREW_FAIL=formulae
+rc="$(in_stubs upgrade_and_shortfall)"
+unset BREW_FAIL
+assert_contains "nothing upgraded is said in so many words" \
+  "Homebrew upgraded nothing: 2 packages still outdated." "$(cat "$tmp/err")"
+assert_eq "no casks outdated: no casks process" "" "$(grep -e '--casks' "$CALLS" || true)"
+assert_eq "the closing line hears about it" "shortfall: nothing was upgraded" "$(tail -n1 "$tmp/out")"
+remove_kept_logs
+
+echo '{"formulae":[],"casks":[]}' > "$BREW_STATE"
+rc="$(in_stubs upgrade_and_shortfall)"
+assert_eq "nothing outdated: brew upgrade is not run" "brew outdated --json=v2" "$(cat "$CALLS")"
+assert_contains "and it says so" "Homebrew packages are all up to date." "$(cat "$tmp/out")"
+assert_eq "nothing outdated: succeeds" 0 "$rc"
+
+outdated_state
+export BREW_OUTDATED_FAIL=1
+rc="$(in_stubs upgrade_and_shortfall)"
+unset BREW_OUTDATED_FAIL
+assert_eq "brew outdated fails: upgrades both kinds anyway" \
+  $'brew outdated --json=v2\nbrew upgrade --formulae\nbrew upgrade --casks' "$(cat "$CALLS")"
+assert_contains "and says it could not count" "cannot tell what gets upgraded" "$(cat "$tmp/err")"
+assert_eq "brew outdated fails: succeeds" 0 "$rc"
 
 printf '#!/bin/sh\n# configuration without Homebrew\n' > "$tmp/system/activate"
 rc="$(in_stubs homebrew_upgrade)"
 write_activate
 assert_eq "activation does not manage Homebrew: brew is not run" "" "$(cat "$CALLS")"
 assert_eq "activation does not manage Homebrew: succeeds" 0 "$rc"
+
+# ---------------------------------------------------------------------------
+echo "closing line"
+# ---------------------------------------------------------------------------
+rc="$(in_stubs finished Update)"
+assert_eq "clean run" "==> Update complete." "$(cat "$tmp/out")"
+# shellcheck disable=SC2034  # read by the sourced ./macsetup functions
+HOMEBREW_SHORTFALL="2 of 4 outdated packages not upgraded"
+rc="$(in_stubs finished Update)"
+HOMEBREW_SHORTFALL=""
+assert_eq "a partial Homebrew upgrade does not read as a clean one" \
+  "WARNING: Update complete, except Homebrew: 2 of 4 outdated packages not upgraded (details above)." \
+  "$(cat "$tmp/err")"
 
 # ---------------------------------------------------------------------------
 echo "appstore_upgrade"
@@ -415,6 +609,41 @@ assert_eq "nothing outdated: mas update is not run" "" "$(cat "$CALLS")"
 assert_eq "nothing outdated: succeeds" 0 "$rc"
 
 # ---------------------------------------------------------------------------
+echo "check_brew_src_pin"
+# ---------------------------------------------------------------------------
+# flake.nix pins brew 7.0.10 while nix-homebrew's own lock still says 7.0.4.
+export PREFETCH_ROOT="$tmp/prefetch"
+mkdir -p "$tmp/pinrepo" "$PREFETCH_ROOT/brew/bin" "$PREFETCH_ROOT/nix-homebrew/modules"
+cat > "$tmp/pinrepo/flake.lock" <<'JSON'
+{"nodes":{"brew-src":{"locked":{"type":"github","owner":"Homebrew","repo":"brew","rev":"8f10429b56be28a25032b87463fffc95e556b5bc"},
+                      "original":{"type":"github","owner":"Homebrew","repo":"brew","ref":"7.0.10"}},
+          "nix-homebrew":{"locked":{"type":"github","owner":"zhaofengli","repo":"nix-homebrew","rev":"c11cccfdd36dd69b5323d70d354b2853379c2426"}}}}
+JSON
+cat > "$PREFETCH_ROOT/nix-homebrew/flake.lock" <<'JSON'
+{"nodes":{"brew-src":{"original":{"type":"github","owner":"Homebrew","repo":"brew","ref":"7.0.4"}}}}
+JSON
+cp "$tmp/brew.tail.sh" "$PREFETCH_ROOT/nix-homebrew/modules/brew.tail.sh"
+# shellcheck disable=SC2034  # read by the sourced ./macsetup functions
+REPO_ROOT="$tmp/pinrepo"
+
+cp "$tmp/bin-brew-7" "$PREFETCH_ROOT/brew/bin/brew"
+rc="$(in_stubs check_brew_src_pin)"
+assert_eq "newer tag than nix-homebrew's pin, same bin/brew tail: passes" 0 "$rc"
+assert_contains "names both releases" \
+  "brew-src Homebrew/brew/7.0.10 matches the bin/brew tail nix-homebrew vendors (from Homebrew/brew/7.0.4)" \
+  "$(cat "$tmp/out")"
+
+cp "$tmp/bin-brew-6" "$PREFETCH_ROOT/brew/bin/brew"
+rc="$(in_stubs check_brew_src_pin)"
+assert_eq "different bin/brew tail (the 2026-09-22 KeyError): fails" 1 "$rc"
+assert_contains "names the release to pin instead" "pin brew-src to Homebrew/brew/7.0.4" "$(cat "$tmp/err")"
+
+rm -rf "$PREFETCH_ROOT/brew"
+rc="$(in_stubs check_brew_src_pin)"
+assert_eq "brew-src cannot be fetched (offline): skips instead of blocking" 0 "$rc"
+unset PREFETCH_ROOT
+
+# ---------------------------------------------------------------------------
 echo "rebuild: order of everything after activation"
 # ---------------------------------------------------------------------------
 mkdir -p "$tmp/repo"
@@ -422,12 +651,14 @@ dn_version 3.23.0
 export MAS_OUTDATED="937984704  Amphetamine  (5.3.2 -> 5.3.3)"
 # shellcheck disable=SC2034
 REPO_ROOT="$tmp/repo"
+outdated_state
 rc="$(in_stubs cmd_rebuild)"
 unset MAS_OUTDATED
-assert_eq "one approval up front; App Store + gc use it; it is revoked; Homebrew (which revokes on start) goes last" \
-  $'sudo -v\nsudo script\nmas update\nsudo nix-env\nsudo nix-collect-garbage\nsudo -k\nbrew upgrade' \
+assert_eq "one approval up front; App Store + gc use it; it is revoked; Homebrew (which revokes it too) goes last" \
+  $'sudo -v\nsudo script\nmas update\nsudo nix-env\nsudo nix-collect-garbage\nsudo -k\nbrew outdated\nbrew upgrade\nbrew upgrade\nbrew outdated' \
   "$(grep -E '^(sudo|mas|brew) ' "$CALLS" | cut -d' ' -f1-2)"
 assert_eq "rebuild succeeds" 0 "$rc"
+assert_eq "and says so last" "==> Rebuild complete." "$(tail -n1 "$tmp/out")"
 
 # ---------------------------------------------------------------------------
 echo

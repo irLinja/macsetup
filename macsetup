@@ -39,6 +39,13 @@ HOMEBREW_BIN="/opt/homebrew/bin/brew"
 NIX_DAEMON_WAIT_TRIES=90
 NIX_DAEMON_POLL_SECONDS=1
 
+# Passed to every nix / darwin-rebuild call on this flake. The tree is dirty
+# on purpose whenever macsetup builds it (update rewrites flake.lock before
+# building, rebuild applies edits that are not committed yet), so Nix's "Git
+# tree ... has uncommitted changes" says nothing new. The files flakes skip
+# are the untracked ones, and those it never warns about.
+NIX_FLAGS=(--option warn-dirty false)
+
 # ---------------------------------------------------------------------------
 # Output helpers
 # ---------------------------------------------------------------------------
@@ -126,6 +133,55 @@ parse_determinate_versions() {
   echo "$daemon ${latest:-$daemon}"
 }
 
+# brew_tail_matches BIN_BREW VENDORED -- true when VENDORED (nix-homebrew's
+# modules/brew.tail.sh) ends with BIN_BREW's tail, cut the way nix-homebrew's
+# scripts/update-brew-tail.sh cuts it: everything after the HOMEBREW_LIBRARY=
+# line, with nix-homebrew's runtime PATH put in front. The header nix-homebrew
+# writes above the tail is not compared.
+brew_tail_matches() {
+  local tail vendored
+  tail="$(sed -e '1,/^HOMEBREW_LIBRARY=/d' -e 's/^PATH="/PATH="@runtimePath@:/' "$1" 2>/dev/null)" || return 1
+  vendored="$(cat "$2" 2>/dev/null)" || return 1
+  [ -n "$tail" ] && [[ "$vendored" == *$'\n'"$tail" ]]
+}
+
+# outdated_names JSON KIND -- from `brew outdated --json=v2` output, the
+# outdated formulae or casks (KIND: formulae | casks) that `brew upgrade`
+# acts on, i.e. not pinned, one per line, sorted for comm.
+outdated_names() {
+  jq -r --arg kind "$2" '.[$kind][]? | select(.pinned | not) | .name' "$1" 2>/dev/null \
+    | LC_ALL=C sort || true
+}
+
+# count_lines FILE -- how many lines FILE has.
+count_lines() {
+  awk 'END { print NR }' "$1"
+}
+
+# packages N -- "1 package", "N packages".
+packages() {
+  if [ "$1" -eq 1 ]; then echo "1 package"; else echo "$1 packages"; fi
+}
+
+# name_list MAX -- stdin's lines as "a, b, c", or the first MAX of them
+# followed by "and N more".
+name_list() {
+  awk -v max="$1" '
+    NR <= max { list = list (NR > 1 ? ", " : "") $0 }
+    END { if (NR > max) list = list " and " (NR - max) " more"; print list }
+  '
+}
+
+# brew_dsl_errors LOG... -- the errors in brew output that mean Homebrew is
+# older than the taps it reads: Ruby rejecting formula or cask DSL it does not
+# know yet (2026-08-13 "unknown keyword: :network_access", 2026-10-21
+# "undefined method 'new' for an instance of Symbol"), as opposed to a failed
+# download or build. Each distinct line once, in order.
+brew_dsl_errors() {
+  grep -h -E '^Error: .*(is unreadable|undefined method|unknown keyword|wrong number of arguments|uninitialized constant)' \
+    "$@" 2>/dev/null | awk '!seen[$0]++' || true
+}
+
 # ---------------------------------------------------------------------------
 # Repo helpers
 # ---------------------------------------------------------------------------
@@ -165,10 +221,29 @@ flake_update() {
   fi
   if [ -n "$token" ]; then
     NIX_CONFIG="access-tokens = github.com=$token
-${NIX_CONFIG:-}" nix flake update "$@"
+${NIX_CONFIG:-}" nix flake update "${NIX_FLAGS[@]}" "$@"
   else
-    nix flake update "$@"
+    nix flake update "${NIX_FLAGS[@]}" "$@"
   fi
+}
+
+# brew_src_pin [LOCK] -- the Homebrew release that flake.lock (or LOCK) pins
+# as brew-src, e.g. Homebrew/brew/7.0.10; nothing when it pins none.
+brew_src_pin() {
+  jq -r '.nodes."brew-src".original | select(. != null) | "\(.owner)/\(.repo)/\(.ref // .rev)"' \
+    "${1:-$REPO_ROOT/flake.lock}" 2>/dev/null || true
+}
+
+# locked_input_path NAME -- the store path of github input NAME at the
+# revision flake.lock pins (fetched on first use, cached after); prints
+# nothing when it cannot be fetched.
+locked_input_path() {
+  local ref
+  ref="$(jq -r --arg name "$1" \
+    '.nodes[$name].locked | select(.type == "github") | "github:\(.owner)/\(.repo)/\(.rev)"' \
+    "$REPO_ROOT/flake.lock" 2>/dev/null || true)"
+  [ -n "$ref" ] || return 0
+  nix flake prefetch --json "$ref" 2>/dev/null | jq -r '.storePath // empty' 2>/dev/null || true
 }
 
 # restore_lock WORKDIR -- put the pre-update flake.lock back, keeping the
@@ -190,9 +265,9 @@ SUDO_STARTED=false
 # a long build never ends in a second prompt that nobody is there to answer.
 # sudo ties an approval to this terminal session, so only commands macsetup
 # runs itself, directly, can reuse it (see run_logged sudo-tty and
-# appstore_upgrade). Every `brew` start revokes it (brew.sh), which is why
-# finish_switch runs Homebrew last. sudo_stop revokes it: nothing outlives
-# the run.
+# appstore_upgrade). brew revokes it before it first uses sudo (utils/sudo.sh;
+# before brew 7.0.8, brew.sh at every start), which is why finish_switch runs
+# Homebrew last. sudo_stop revokes it: nothing outlives the run.
 sudo_start() {
   info "sudo is needed once for this run; the approval is revoked when macsetup exits."
   sudo -v || error "sudo authentication failed"
@@ -290,30 +365,33 @@ check_determinate_nix() {
   return 0
 }
 
-# nix-homebrew vendors part of Homebrew's own bin/brew from the release it
-# pins, while flake.nix overrides that pin (brew-src) so the taps' DSL can be
-# newer than nix-homebrew's lag. The two must agree or every Ruby-backed brew
-# command dies during activation (2026-09-22: KeyError on
-# HOMEBREW_ORIGINAL_BREW_FILE after nix-homebrew moved to 7.0.4 and we sat on
-# 6.0.17). Silently skips when either side cannot be determined offline.
+# nix-homebrew's brew wrapper ends with a copy of the tail of Homebrew's own
+# bin/brew, taken from the release nix-homebrew pins, while flake.nix
+# overrides that release (brew-src) so the taps' DSL can be newer than
+# nix-homebrew's lag. That only works while the pinned release has the same
+# bin/brew tail; otherwise every Ruby-backed brew command dies during
+# activation (2026-09-22: KeyError on HOMEBREW_ORIGINAL_BREW_FILE, brew 6.0.17
+# under a 7.0.4 tail). A newer release with an unchanged bin/brew is fine
+# (2026-10-21: 7.0.10 under the 7.0.4 tail). Silently skips when either
+# side cannot be fetched.
 check_brew_src_pin() {
-  local pin_query ours rev ref path theirs
-  pin_query='.nodes."brew-src".original | select(. != null) | "\(.owner)/\(.repo)/\(.ref // .rev)"'
-  ours="$(jq -r "$pin_query" "$REPO_ROOT/flake.lock" 2>/dev/null || true)"
+  local ours rev brew_src nix_homebrew theirs
+  ours="$(brew_src_pin)"
   [ -n "$ours" ] || return 0
   rev="$(jq -r '.nodes."nix-homebrew".locked.rev // empty' "$REPO_ROOT/flake.lock" 2>/dev/null || true)"
   [ -n "$rev" ] || return 0
-  ref="$(jq -r '.nodes."nix-homebrew".locked | "github:\(.owner)/\(.repo)/\(.rev)"' "$REPO_ROOT/flake.lock" 2>/dev/null || true)"
-  path="$(nix flake prefetch --json "$ref" 2>/dev/null | jq -r '.storePath // empty' || true)"
-  [ -n "$path" ] && [ -f "$path/flake.lock" ] || return 0
-  theirs="$(jq -r "$pin_query" "$path/flake.lock" 2>/dev/null || true)"
-  [ -n "$theirs" ] || return 0
-  if [ "$ours" != "$theirs" ]; then
-    warn "brew-src pin mismatch: flake.nix pins $ours but nix-homebrew ${rev:0:7} expects $theirs."
-    warn "Activation would fail. In flake.nix set  brew-src.url = \"github:$theirs\"  and re-run."
+  brew_src="$(locked_input_path brew-src)"
+  nix_homebrew="$(locked_input_path nix-homebrew)"
+  [ -n "$brew_src" ] && [ -f "$brew_src/bin/brew" ] || return 0
+  [ -n "$nix_homebrew" ] && [ -f "$nix_homebrew/modules/brew.tail.sh" ] || return 0
+  theirs="$(brew_src_pin "$nix_homebrew/flake.lock")"
+  theirs="${theirs:-its own brew-src pin}"
+  if ! brew_tail_matches "$brew_src/bin/brew" "$nix_homebrew/modules/brew.tail.sh"; then
+    warn "brew-src $ours has a different bin/brew tail than the one nix-homebrew ${rev:0:7} vendors (from $theirs)."
+    warn "Activation would fail. In flake.nix pin brew-src to $theirs (or a release with the same bin/brew) and re-run."
     return 1
   fi
-  info "brew-src pin matches nix-homebrew's ($theirs)."
+  info "brew-src $ours matches the bin/brew tail nix-homebrew vendors (from $theirs)."
 }
 
 # A switch whose activation aborted still advances the system profile, so the
@@ -339,7 +417,7 @@ dry_run_report() {
   local cfg="$1" log="$2" allow_heavy="$3"
   local local_builds heavy
   info "Checking what .#$cfg would build locally..."
-  run_logged quiet "$log" nix build --dry-run --no-link ".#darwinConfigurations.$cfg.system" \
+  run_logged quiet "$log" nix build --dry-run --no-link "${NIX_FLAGS[@]}" ".#darwinConfigurations.$cfg.system" \
     || return 1
   local_builds="$(dry_run_local_builds "$log")"
   if [ -z "$local_builds" ]; then
@@ -433,7 +511,7 @@ activated_mas() {
 # appstore_upgrade -- update the Mac App Store apps the Brewfile declares.
 # mas needs root for this and reuses this session's sudo approval, so it has
 # to run while macsetup still holds one -- before homebrew_upgrade, since
-# every `brew` start revokes it. A failed update only warns.
+# brew revokes it. A failed update only warns.
 appstore_upgrade() {
   local brewfile ids mas
   brewfile="$(activated_brewfile)"
@@ -451,41 +529,127 @@ appstore_upgrade() {
   "$mas" update $ids || warn "Some App Store updates failed; retry with: $mas update"
 }
 
-# homebrew_upgrade -- upgrade Homebrew formulae and casks in ONE `brew
-# upgrade` process. Every `brew` start revokes this session's sudo approval
-# (brew.sh runs `sudo --reset-timestamp`), and `brew bundle` starts a separate
-# `brew upgrade --cask` per cask, so each cask with a root installer asked
-# again. One process resets once: Homebrew asks at most once, and only when a
-# cask needs root. Only for systems whose activation manages Homebrew. Never
-# fails the caller: the system is already switched, so a failed download is a
-# warning, not a failed run.
+# brew_noninteractive ARGS... -- brew the way macsetup runs it, at the end of
+# a run nobody may be watching: no auto-update (the taps are flake inputs), no
+# env hints (brew 7 explains its auto_updates-cask behaviour on every run), and
+# no "Do you want to proceed?" (brew 7 asks by default whenever stdin and
+# stdout are terminals).
+brew_noninteractive() {
+  HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1 HOMEBREW_NO_ASK=1 "$HOMEBREW_BIN" "$@"
+}
+
+# brew_outdated FILE -- `brew outdated --json=v2` into FILE, its stderr into
+# FILE.err; fails unless brew answered with JSON.
+brew_outdated() {
+  brew_noninteractive outdated --json=v2 >"$1" 2>"$1.err" && jq -e . "$1" >/dev/null 2>&1
+}
+
+# What homebrew_upgrade left undone, for the closing line of rebuild and
+# update; empty when everything went through.
+HOMEBREW_SHORTFALL=""
+
+# homebrew_upgrade -- upgrade the outdated Homebrew formulae, then the
+# outdated casks, one `brew upgrade` process each, and say plainly what was
+# not upgraded. Not one process for both: brew abandons the whole run at the
+# first formula it cannot load, so on 2026-10-21 one unreadable formula kept
+# every cask (every app) from upgrading too. Not one process per package
+# either: brew revokes this session's sudo approval before it first uses sudo,
+# so `brew bundle`, which starts one per cask, asked again for each cask with
+# a root installer. Formula upgrades never use sudo, so only the casks'
+# process can ask, and at most once. Only for systems whose activation manages
+# Homebrew. Never fails the caller -- the system is already switched -- but
+# sets HOMEBREW_SHORTFALL when something was left behind.
 homebrew_upgrade() {
-  local log
+  local dir kind n note pin dsl counted=false total=0 left failed=""
   [ -x "$HOMEBREW_BIN" ] || return 0
   if [ -z "$(activated_brewfile)" ]; then
     warn "Activation does not run brew bundle; skipping Homebrew upgrades."
     return 0
   fi
-  info "Upgrading Homebrew packages (Homebrew asks for sudo itself if one needs root)..."
-  log="$(mktemp -t macsetup-brew)"
-  if HOMEBREW_NO_AUTO_UPDATE=1 "$HOMEBREW_BIN" upgrade 2>&1 | tee "$log"; then
-    rm -f "$log"
+  dir="$(mktemp -d -t macsetup-brew)"
+  if brew_outdated "$dir/before.json"; then
+    counted=true
+    for kind in formulae casks; do
+      outdated_names "$dir/before.json" "$kind" >"$dir/$kind.before"
+      total=$((total + $(count_lines "$dir/$kind.before")))
+    done
+    if [ "$total" -eq 0 ]; then
+      info "Homebrew packages are all up to date."
+      rm -rf "$dir"
+      return 0
+    fi
+  else
+    warn "brew outdated failed, so macsetup cannot tell what gets upgraded:"
+    tail -n 5 "$dir/before.json.err" >&2
+  fi
+
+  for kind in formulae casks; do
+    n=""
+    if [ "$counted" = true ]; then
+      n="$(count_lines "$dir/$kind.before")"
+      [ "$n" -gt 0 ] || continue
+    fi
+    note="${n:+$n outdated}"
+    [ "$kind" = formulae ] || note="${note:+$note; }Homebrew asks for sudo itself if one needs root"
+    info "Upgrading Homebrew $kind${note:+ ($note)}..."
+    brew_noninteractive upgrade "--$kind" 2>&1 | tee "$dir/$kind.log" || failed="$failed $kind"
+  done
+
+  if [ "$counted" = true ] && brew_outdated "$dir/after.json"; then
+    for kind in formulae casks; do
+      outdated_names "$dir/after.json" "$kind" | LC_ALL=C comm -12 "$dir/$kind.before" -
+    done >"$dir/left"
+    left="$(count_lines "$dir/left")"
+    if [ "$left" -eq 0 ]; then
+      info "Homebrew: upgraded $(packages "$total"), nothing left outdated."
+    elif [ "$left" -eq "$total" ]; then
+      HOMEBREW_SHORTFALL="nothing was upgraded"
+      warn "Homebrew upgraded nothing: $(packages "$total") still outdated."
+    else
+      HOMEBREW_SHORTFALL="$left of $total outdated packages not upgraded"
+      warn "Homebrew upgraded $((total - left)) of $total outdated packages. Not upgraded: $(name_list 8 <"$dir/left")."
+    fi
+  fi
+  if [ -z "$HOMEBREW_SHORTFALL" ] && [ -n "$failed" ]; then
+    HOMEBREW_SHORTFALL="brew upgrade reported errors"
+    warn "brew upgrade reported errors (${failed# }); see above."
+  fi
+  if [ -z "$HOMEBREW_SHORTFALL" ]; then
+    rm -rf "$dir"
     return 0
   fi
-  warn "Some Homebrew packages failed to upgrade:"
-  grep -E '^Error' "$log" >&2 || true
-  warn "The system itself is up to date. Retry the rest with: brew upgrade   (full log: $log)"
+
+  dsl="$(brew_dsl_errors "$dir"/*.log "$dir"/*.err | head -n 3)"
+  if [ -n "$dsl" ]; then
+    pin="$(brew_src_pin)"
+    warn "Cause: ${pin:-the pinned Homebrew} (brew-src in flake.nix) is older than the taps it reads:"
+    printf '%s\n' "$dsl" | sed 's/^/    /' >&2
+    warn "Fix: pin brew-src to the latest Homebrew/brew release, then run: macsetup rebuild"
+  else
+    warn "Retry with: brew upgrade"
+  fi
+  warn "Homebrew logs: $dir"
   return 0
 }
 
 # finish_switch -- everything after a successful activation, in the only order
 # that keeps it to one approval: what needs macsetup's approval first, then
-# revoke it, then Homebrew, whose every start revokes approvals anyway.
+# revoke it, then Homebrew, which revokes approvals itself.
 finish_switch() {
   appstore_upgrade
   gc
   sudo_stop
   homebrew_upgrade
+}
+
+# finished WHAT -- the closing line of rebuild and update: plain success, or
+# what Homebrew left undone, so a partial upgrade does not read as a clean one.
+finished() {
+  if [ -n "$HOMEBREW_SHORTFALL" ]; then
+    warn "$1 complete, except Homebrew: $HOMEBREW_SHORTFALL (details above)."
+  else
+    info "$1 complete."
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -523,8 +687,8 @@ After rebuild, update, rollback, and switch, old generations are
 automatically pruned (keeping the last 3) and garbage collected.
 
 rebuild and update ask for sudo once, at the start, and revoke the approval
-when done. Homebrew revokes sudo approvals whenever it starts, so it may ask
-once more at the very end, only when a package with a root installer updates.
+when done. Homebrew revokes sudo approvals before it uses sudo, so it may ask
+once more at the very end, only when an app with a root installer updates.
 EOF
 }
 
@@ -560,12 +724,12 @@ cmd_rebuild() {
   sudo_start
   info "Rebuilding system configuration (.#$cfg)..."
   work="$(mktemp -d -t macsetup-rebuild)"
-  if ! run_logged sudo-tty "$work/switch.log" darwin-rebuild switch --flake ".#$cfg"; then
+  if ! run_logged sudo-tty "$work/switch.log" darwin-rebuild switch --flake ".#$cfg" "${NIX_FLAGS[@]}"; then
     error "Rebuild failed. Full log: $work/switch.log"
   fi
   finish_switch
   rm -rf "$work"
-  info "Rebuild complete."
+  finished Rebuild
 }
 
 cmd_update() {
@@ -621,7 +785,7 @@ cmd_update() {
   fi
 
   info "Building the new system configuration (as $USER; sudo comes later)..."
-  if ! run_logged tty "$work/build.log" nix build --no-link ".#darwinConfigurations.$cfg.system"; then
+  if ! run_logged tty "$work/build.log" nix build --no-link "${NIX_FLAGS[@]}" ".#darwinConfigurations.$cfg.system"; then
     restore_lock "$work"
     error "The updated inputs do not build; nothing was changed on this Mac. Full log: $work/build.log"
   fi
@@ -633,7 +797,7 @@ cmd_update() {
   fi
 
   info "Activating (.#$cfg)..."
-  if ! run_logged sudo-tty "$work/switch.log" darwin-rebuild switch --flake ".#$cfg"; then
+  if ! run_logged sudo-tty "$work/switch.log" darwin-rebuild switch --flake ".#$cfg" "${NIX_FLAGS[@]}"; then
     error "Activation failed after a successful build, so this is an activation-time problem (usually Homebrew).
 Full log:        $work/switch.log
 Retry with:      macsetup rebuild
@@ -641,7 +805,7 @@ Or go back with: cp $work/flake.lock.before flake.lock && macsetup rebuild"
   fi
   finish_switch
   rm -rf "$work"
-  info "Update complete."
+  finished Update
 }
 
 cmd_doctor() {
