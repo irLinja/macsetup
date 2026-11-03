@@ -182,6 +182,24 @@ brew_dsl_errors() {
     "$@" 2>/dev/null | awk '!seen[$0]++' || true
 }
 
+# brew_skew_advice DSL_ERRORS RERUN -- say why brew_dsl_errors output means
+# the pinned Homebrew is older than the taps it reads, and how to fix it;
+# RERUN is the command to run afterwards. Warnings, on stderr.
+brew_skew_advice() {
+  local pin
+  pin="$(brew_src_pin)"
+  warn "Cause: ${pin:-the pinned Homebrew} (brew-src in flake.nix) is older than the taps it reads:"
+  printf '%s\n' "$1" | sed 's/^/    /' >&2
+  warn "Fix: pin brew-src to the latest Homebrew/brew release, then run: $2"
+}
+
+# brewfile_names BREWFILE KIND -- the names BREWFILE declares as KIND (brew |
+# cask), one per line in file order, exactly as written (tap prefix and
+# @version included). Options, comments, taps and App Store apps are not names.
+brewfile_names() {
+  sed -n "s/^$2 \"\\([^\"]*\\)\".*/\\1/p" "$1" 2>/dev/null || true
+}
+
 # ---------------------------------------------------------------------------
 # Repo helpers
 # ---------------------------------------------------------------------------
@@ -442,6 +460,123 @@ dry_run_report() {
   return 1
 }
 
+# nix_homebrew_parts SYSTEM -- what the built SYSTEM installs as Homebrew, one
+# per line: the brew source tree, the taps, and the brew wrapper. They are the
+# symlink lines of nix-homebrew's setup-homebrew, which SYSTEM's activate
+# script runs. Fails when SYSTEM has no such script or its lines changed shape.
+# shellcheck disable=SC2016  # the $ in the sed patterns is setup-homebrew's own text
+nix_homebrew_parts() {
+  local setup code taps wrapper
+  setup="$(grep -m1 -E '^/[^[:space:]]*-setup-homebrew$' "$1/activate" 2>/dev/null)" || return 1
+  code="$(sed -n 's|^/bin/ln -shf "\(.*\)/Library/Homebrew" "\$HOMEBREW_LIBRARY/Homebrew"$|\1|p' "$setup" 2>/dev/null)"
+  taps="$(sed -n 's|^/bin/ln -shf "\([^"]*\)" "\$HOMEBREW_LIBRARY/Taps"$|\1|p' "$setup" 2>/dev/null)"
+  wrapper="$(sed -n 's|^/bin/ln -shf "\([^"]*\)" "\$BIN_BREW"$|\1|p' "$setup" 2>/dev/null)"
+  [ -n "$code" ] && [ -n "$taps" ] && [ -n "$wrapper" ] || return 1
+  printf '%s\n%s\n%s\n' "$code" "$taps" "$wrapper"
+}
+
+# scratch_homebrew DIR CODE TAPS WRAPPER LIVE -- a throwaway Homebrew prefix at
+# DIR/prefix that runs the brew a new system will install, without installing
+# it: Library/Homebrew and Library/Taps are the new build's, and bin/brew is
+# nix-homebrew's wrapper rewired to this prefix. LIVE, the real prefix, only
+# lends Cellar, Caskroom, opt and var/homebrew, which `brew info` reads and
+# never writes. Brew loads an installed package from its own copy of the
+# definition once the tap has dropped it (homebrew-core moved azure-cli to a
+# cask), and activation relies on that, so the check has to see what is
+# installed here.
+scratch_homebrew() {
+  local dir="$1" code="$2" taps="$3" wrapper="$4" live="$5" p d
+  p="$dir/prefix"
+  mkdir -p "$p/bin" "$p/var" "$p/Library/.homebrew-is-managed-by-nix/.git"
+  : > "$p/Library/.homebrew-is-managed-by-nix/.git/HEAD"
+  ln -s "$code/Library/Homebrew" "$p/Library/Homebrew"
+  ln -s "$taps" "$p/Library/Taps"
+  for d in Cellar Caskroom opt; do
+    if [ -e "$live/$d" ]; then ln -s "$live/$d" "$p/$d"; fi
+  done
+  if [ -e "$live/var/homebrew" ]; then ln -s "$live/var/homebrew" "$p/var/homebrew"; fi
+  sed -e "s|^export HOMEBREW_PREFIX=.*|export HOMEBREW_PREFIX=\"$p\"|" \
+      -e "s|^export HOMEBREW_LIBRARY=.*|export HOMEBREW_LIBRARY=\"$p/Library\"|" \
+      -e "s|^export HOMEBREW_BREW_FILE=.*|export HOMEBREW_BREW_FILE=\"$p/bin/brew\"|" \
+      "$wrapper" >"$p/bin/brew"
+  chmod +x "$p/bin/brew"
+}
+
+# preflight_homebrew SYSTEM [RERUN] -- before the built SYSTEM is activated,
+# let the Homebrew it installs read every formula and cask its Brewfile
+# declares. Activation runs `brew bundle` and macsetup then runs `brew
+# upgrade`, and both die at a definition their brew cannot parse. That has
+# happened four times: the taps adopt new DSL before the pinned brew (brew-src)
+# knows it. On 2026-11-03 (`zap :not_required`) it happened in the middle of
+# activation, with half of the Brewfile installed. This runs in a scratch
+# prefix (scratch_homebrew), so nothing is installed or changed.
+#
+# Fails only on the errors brew_dsl_errors recognises, the ones whose fix is
+# the brew-src pin; RERUN is the command the advice ends with. Anything else
+# (a package the taps lost, brew itself failing) only warns: restoring the
+# lock would not fix it, and refusing to update over it would block every
+# update. Skips, with a warning, when the system's setup-homebrew cannot be
+# found.
+#
+# The check runs with HOMEBREW_NO_REQUIRE_TAP_TRUST because trust is
+# `brew bundle`'s job (it records the Brewfile's entries, see homebrew.nix),
+# so a tap added to the config would otherwise fail here until the first
+# activation. brew 7 deprecates the variable; it is only set for this
+# read-only scratch prefix, never for real brew runs.
+preflight_homebrew() {
+  local system="$1" rerun="${2:-macsetup update}"
+  local brewfile parts code taps wrapper dir kind label names n dsl
+  local counts="" failed=false
+  local args=()
+  brewfile="$(activated_brewfile "$system")"
+  [ -n "$brewfile" ] || return 0
+  if ! parts="$(nix_homebrew_parts "$system")"; then
+    warn "Cannot find the new Homebrew in the built system; skipping the Homebrew check."
+    return 0
+  fi
+  { read -r code; read -r taps; read -r wrapper; } <<<"$parts"
+
+  dir="$(mktemp -d -t macsetup-preflight)"
+  scratch_homebrew "$dir" "$code" "$taps" "$wrapper" "$(dirname "$(dirname "$HOMEBREW_BIN")")"
+  for kind in formula cask; do
+    names="$(brewfile_names "$brewfile" "$([ "$kind" = formula ] && echo brew || echo cask)")"
+    [ -n "$names" ] || continue
+    args=()
+    while IFS= read -r n; do args+=("$n"); done <<<"$names"
+    case "$kind:${#args[@]}" in
+      formula:1) label=formula ;;
+      formula:*) label=formulae ;;
+      cask:1)    label=cask ;;
+      *)         label=casks ;;
+    esac
+    counts="${counts:+$counts, }${#args[@]} $label"
+    if ! (
+      export HOMEBREW_TEMP="$dir/tmp" HOMEBREW_CACHE="$dir/cache" HOMEBREW_LOGS="$dir/logs"
+      export HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+      HOMEBREW_BIN="$dir/prefix/bin/brew" brew_noninteractive info --json=v2 "--$kind" "${args[@]}"
+    ) >"$dir/$kind.json" 2>"$dir/$kind.err"; then
+      failed=true
+    fi
+  done
+
+  if [ "$failed" = false ]; then
+    info "Homebrew: the new brew reads all of the Brewfile's packages ($counts)."
+    rm -rf "$dir"
+    return 0
+  fi
+  dsl="$(brew_dsl_errors "$dir/formula.err" "$dir/cask.err" | head -n 3)"
+  if [ -n "$dsl" ]; then
+    warn "The Homebrew this configuration installs cannot read the Brewfile's packages; activating it would fail on them."
+    brew_skew_advice "$dsl" "$rerun"
+    warn "Homebrew's output is kept in $dir"
+    return 1
+  fi
+  warn "macsetup could not finish the Homebrew check (not an error that restoring the lock would fix, so carrying on):"
+  cat "$dir/formula.err" "$dir/cask.err" 2>/dev/null \
+    | grep -v '^Warning: Calling HOMEBREW_NO_REQUIRE_TAP_TRUST' | tail -n 5 | sed 's/^/    /' >&2 || true
+  rm -rf "$dir"
+}
+
 # ---------------------------------------------------------------------------
 # Upgrades that ride along with update and rebuild
 # ---------------------------------------------------------------------------
@@ -492,11 +627,12 @@ wait_for_determinate_nix() {
 # it names: the Brewfile, and the mas that nix-darwin puts on its PATH (mas is
 # not on the user's PATH).
 activation_bundle_line() {
-  grep -m1 'brew bundle --file=' "$CURRENT_SYSTEM/activate" 2>/dev/null || true
+  grep -m1 'brew bundle --file=' "${1:-$CURRENT_SYSTEM}/activate" 2>/dev/null || true
 }
 
+# The Brewfile of SYSTEM (default: the running one).
 activated_brewfile() {
-  activation_bundle_line | sed -n "s/.*brew bundle --file='\([^']*\)'.*/\1/p"
+  activation_bundle_line "${1:-}" | sed -n "s/.*brew bundle --file='\([^']*\)'.*/\1/p"
 }
 
 activated_mas() {
@@ -560,7 +696,7 @@ HOMEBREW_SHORTFALL=""
 # Homebrew. Never fails the caller -- the system is already switched -- but
 # sets HOMEBREW_SHORTFALL when something was left behind.
 homebrew_upgrade() {
-  local dir kind n note pin dsl counted=false total=0 left failed=""
+  local dir kind n note dsl counted=false total=0 left failed=""
   [ -x "$HOMEBREW_BIN" ] || return 0
   if [ -z "$(activated_brewfile)" ]; then
     warn "Activation does not run brew bundle; skipping Homebrew upgrades."
@@ -621,10 +757,7 @@ homebrew_upgrade() {
 
   dsl="$(brew_dsl_errors "$dir"/*.log "$dir"/*.err | head -n 3)"
   if [ -n "$dsl" ]; then
-    pin="$(brew_src_pin)"
-    warn "Cause: ${pin:-the pinned Homebrew} (brew-src in flake.nix) is older than the taps it reads:"
-    printf '%s\n' "$dsl" | sed 's/^/    /' >&2
-    warn "Fix: pin brew-src to the latest Homebrew/brew release, then run: macsetup rebuild"
+    brew_skew_advice "$dsl" "macsetup rebuild"
   else
     warn "Retry with: brew upgrade"
   fi
@@ -665,11 +798,15 @@ Usage: macsetup <command> [args]
 Commands:
   bootstrap     First-time setup (install Nix + nix-darwin) [--force]
   rebuild       Apply configuration changes (darwin-rebuild switch), then
-                upgrade App Store and Homebrew packages
+                upgrade App Store and Homebrew packages. Builds first and
+                checks that Homebrew can read every package in the Brewfile;
+                if not, nothing is activated.
   update        Upgrade Determinate Nix when a newer release exists, update
                 flake inputs, build, then switch and upgrade App Store and
                 Homebrew packages. If the new inputs fail to evaluate or
-                build, flake.lock is restored and the system is left untouched.
+                build, or the new Homebrew cannot read the new taps (checked
+                before activating), flake.lock is restored and the system is
+                left untouched.
                   [input...]             update only these inputs
                   --build-only           update + build, do not switch
                   --allow-heavy-builds   allow multi-hour toolchain builds
@@ -721,9 +858,19 @@ cmd_rebuild() {
   cd "$REPO_ROOT"
   check_determinate_nix || true
   check_brew_src_pin || error "Fix the brew-src pin in flake.nix before rebuilding."
+  # darwin-rebuild builds and activates in one go, so build first (as the user;
+  # the switch below finds it cached) and let the new brew read the Brewfile
+  # before anything is activated.
+  work="$(mktemp -d -t macsetup-rebuild)"
+  info "Building the system configuration (.#$cfg)..."
+  run_logged tty "$work/build.log" nix build --out-link "$work/system" "${NIX_FLAGS[@]}" ".#darwinConfigurations.$cfg.system" \
+    || error "The configuration does not build; nothing was changed on this Mac. Full log: $work/build.log"
+  if ! preflight_homebrew "$work/system" "macsetup rebuild"; then
+    rm -rf "$work"  # the build was fine; Homebrew's own output is kept by the check
+    error "Homebrew cannot read the packages this configuration declares; nothing was changed on this Mac."
+  fi
   sudo_start
   info "Rebuilding system configuration (.#$cfg)..."
-  work="$(mktemp -d -t macsetup-rebuild)"
   if ! run_logged sudo-tty "$work/switch.log" darwin-rebuild switch --flake ".#$cfg" "${NIX_FLAGS[@]}"; then
     error "Rebuild failed. Full log: $work/switch.log"
   fi
@@ -785,9 +932,16 @@ cmd_update() {
   fi
 
   info "Building the new system configuration (as $USER; sudo comes later)..."
-  if ! run_logged tty "$work/build.log" nix build --no-link "${NIX_FLAGS[@]}" ".#darwinConfigurations.$cfg.system"; then
+  if ! run_logged tty "$work/build.log" nix build --out-link "$work/system" "${NIX_FLAGS[@]}" ".#darwinConfigurations.$cfg.system"; then
     restore_lock "$work"
     error "The updated inputs do not build; nothing was changed on this Mac. Full log: $work/build.log"
+  fi
+
+  # Building proves Nix can evaluate the new inputs, not that the new Homebrew
+  # can read the new taps. Find that out now, not in the middle of activation.
+  if ! preflight_homebrew "$work/system" "macsetup update"; then
+    restore_lock "$work"
+    error "The updated taps are too new for the pinned Homebrew; nothing was changed on this Mac. Logs: $work"
   fi
 
   if [ "$build_only" = true ]; then

@@ -255,7 +255,9 @@ esac
 STUB
 
 # `nix flake prefetch --json github:OWNER/REPO/REV` answers with the store path
-# $PREFETCH_ROOT/REPO when PREFETCH_ROOT is set.
+# $PREFETCH_ROOT/REPO when PREFETCH_ROOT is set. `nix flake update` replaces
+# ./flake.lock with $NIX_UPDATE_LOCK when that is set. `nix build --out-link
+# LINK` points LINK at $NIX_BUILD_RESULT (the built system) when that is set.
 cat > "$stubs/nix" <<'STUB'
 #!/bin/bash
 echo "nix $*" >> "$CALLS"
@@ -263,6 +265,16 @@ if [ "${1:-} ${2:-} ${3:-}" = "flake prefetch --json" ] && [ -n "${PREFETCH_ROOT
   repo="${4#github:*/}"
   printf '{"storePath":"%s"}\n' "$PREFETCH_ROOT/${repo%%/*}"
 fi
+if [ "${1:-} ${2:-}" = "flake update" ] && [ -n "${NIX_UPDATE_LOCK:-}" ]; then
+  cp "$NIX_UPDATE_LOCK" flake.lock
+fi
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = --out-link ] && [ -n "${NIX_BUILD_RESULT:-}" ]; then
+    ln -sfn "$NIX_BUILD_RESULT" "$arg"
+  fi
+  prev="$arg"
+done
 STUB
 
 cat > "$stubs/nix-env" <<'STUB'
@@ -644,6 +656,165 @@ assert_eq "brew-src cannot be fetched (offline): skips instead of blocking" 0 "$
 unset PREFETCH_ROOT
 
 # ---------------------------------------------------------------------------
+echo "brewfile_names"
+# ---------------------------------------------------------------------------
+cat > "$tmp/hbfile" <<'TXT'
+# Created by `nix-darwin`'s `homebrew` module
+
+# Taps
+tap "homebrew/homebrew-core"
+tap "theboredteam/boring-notch"
+
+# Brews
+brew "jq", trusted: true
+brew "ripgrep"
+brew "ariga/tap/atlas", trusted: true
+# brew "terraform", trusted: true
+
+# Casks
+cask "ledger-wallet", trusted: true
+cask "temurin@25", trusted: true
+cask "theboredteam/boring-notch/boring-notch", trusted: true
+
+# Mac App Store
+mas "Amphetamine", id: 937984704
+TXT
+assert_eq "formulae: plain and tap-qualified, in order; no comments, taps or App Store apps" \
+  $'jq\nripgrep\nariga/tap/atlas' "$(brewfile_names "$tmp/hbfile" brew)"
+assert_eq "casks: versioned and tap-qualified names stay whole" \
+  $'ledger-wallet\ntemurin@25\ntheboredteam/boring-notch/boring-notch' "$(brewfile_names "$tmp/hbfile" cask)"
+assert_eq "a Brewfile that is not there: nothing" "" "$(brewfile_names "$tmp/no-such-file" cask)"
+
+# ---------------------------------------------------------------------------
+echo "nix_homebrew_parts / scratch_homebrew"
+# ---------------------------------------------------------------------------
+# What a built system holds: its activate script runs nix-homebrew's
+# setup-homebrew, whose symlink lines name the Homebrew code, the taps and the
+# brew wrapper this configuration installs (copied from a real one).
+hb="$tmp/hbstore"
+mkdir -p "$hb/code/Library/Homebrew" "$hb/taps-env" "$tmp/hbsys" "$tmp/nobrewsys" "$tmp/nosetupsys" \
+  "$tmp/live/bin" "$tmp/live/Cellar" "$tmp/live/Caskroom"
+# Stands in for nix-homebrew's brew wrapper: logs what it is asked and fails
+# with $FAKE_BREW_ERR when asked about $FAKE_BREW_KIND (formula | cask).
+cat > "$hb/brew-wrapper" <<'WRAPPER'
+#!/bin/bash
+export HOMEBREW_PREFIX="/opt/homebrew"
+export HOMEBREW_LIBRARY="/opt/homebrew/Library"
+export HOMEBREW_REPOSITORY="$HOMEBREW_LIBRARY/.homebrew-is-managed-by-nix"
+export HOMEBREW_BREW_FILE="/nix/store/d71ww3xw72mp0qi6ap54nias8qzd8ci9-brew"
+echo "scratch-brew prefix=$HOMEBREW_PREFIX noask=${HOMEBREW_NO_ASK:-} notrust=${HOMEBREW_NO_REQUIRE_TAP_TRUST:-} args=$*" >> "$CALLS"
+case " $* " in
+  *" --${FAKE_BREW_KIND:-none} "*)
+    echo "$FAKE_BREW_ERR" >&2
+    exit 1
+    ;;
+esac
+echo '{"formulae":[],"casks":[]}'
+WRAPPER
+chmod +x "$hb/brew-wrapper"
+cat > "$hb/c4vi-setup-homebrew" <<TXT
+#!/bin/bash
+HOMEBREW_PREFIX="/opt/homebrew"
+HOMEBREW_LIBRARY="/opt/homebrew/Library"
+/bin/ln -shf "$hb/code/Library/Homebrew" "\$HOMEBREW_LIBRARY/Homebrew"
+/bin/ln -shf "$hb/taps-env" "\$HOMEBREW_LIBRARY/Taps"
+BIN_BREW="\$HOMEBREW_PREFIX/bin/brew"
+/bin/ln -shf "$hb/brew-wrapper" "\$BIN_BREW"
+TXT
+cat > "$tmp/hbsys/activate" <<TXT
+>&2 echo "setting up Homebrew prefixes..."
+$hb/c4vi-setup-homebrew
+
+# Homebrew Bundle
+echo >&2 "Homebrew bundle..."
+if [ -f "/opt/homebrew/bin/brew" ]; then
+  PATH="/opt/homebrew/bin:\$PATH" sudo --preserve-env=PATH --user=arash --set-home env brew bundle --file='$tmp/hbfile' --no-upgrade --zap --force-cleanup
+fi
+TXT
+echo 'echo no homebrew module in this configuration' > "$tmp/nobrewsys/activate"
+sed '/setup-homebrew/d' "$tmp/hbsys/activate" > "$tmp/nosetupsys/activate"
+
+assert_eq "the new Homebrew code, taps and brew wrapper, from the built system's setup-homebrew" \
+  "$hb/code"$'\n'"$hb/taps-env"$'\n'"$hb/brew-wrapper" "$(nix_homebrew_parts "$tmp/hbsys")"
+assert_false nix_homebrew_parts "$tmp/nosetupsys"
+assert_false nix_homebrew_parts "$tmp/nobrewsys"
+
+scratch_homebrew "$tmp/scratch" "$hb/code" "$hb/taps-env" "$hb/brew-wrapper" "$tmp/live"
+sp="$tmp/scratch/prefix"
+assert_eq "Library/Homebrew and Taps are the NEW build's" \
+  "$hb/code/Library/Homebrew"$'\n'"$hb/taps-env" "$(readlink "$sp/Library/Homebrew")"$'\n'"$(readlink "$sp/Library/Taps")"
+assert_true test -e "$sp/Library/.homebrew-is-managed-by-nix/.git/HEAD"
+assert_eq "the wrapper copy is rewired to the scratch prefix" \
+  "export HOMEBREW_PREFIX=\"$sp\""$'\n'"export HOMEBREW_LIBRARY=\"$sp/Library\""$'\n'"export HOMEBREW_BREW_FILE=\"$sp/bin/brew\"" \
+  "$(grep -E '^export HOMEBREW_(PREFIX|LIBRARY|BREW_FILE)=' "$sp/bin/brew")"
+assert_true test -x "$sp/bin/brew"
+assert_contains "the original wrapper still points at the real prefix" 'HOMEBREW_PREFIX="/opt/homebrew"' "$(cat "$hb/brew-wrapper")"
+assert_eq "what is installed on this Mac is visible (brew falls back to an installed package's own copy of its definition)" \
+  "$tmp/live/Cellar"$'\n'"$tmp/live/Caskroom" "$(readlink "$sp/Cellar")"$'\n'"$(readlink "$sp/Caskroom")"
+assert_false test -e "$sp/opt"
+
+# ---------------------------------------------------------------------------
+echo "preflight_homebrew"
+# ---------------------------------------------------------------------------
+# 2026-11-03: homebrew-cask began writing `zap :not_required`; brew <= 7.0.10
+# died on it while activation was already running.
+ZAP_ERROR="Error: Cask 'kotlin-lsp' definition is invalid: invalid 'zap' stanza: wrong number of arguments (given 2, expected 1)"
+# shellcheck disable=SC2034  # read by the sourced ./macsetup functions
+preflight() { local HOMEBREW_BIN="$tmp/live/bin/brew"; preflight_homebrew "${1:-$tmp/hbsys}"; }
+# A failed check keeps Homebrew's output, and a failed update its work dir, in
+# the real per-user temp dir (macOS mktemp -t ignores TMPDIR): remove them.
+remove_kept_dirs() {
+  { sed -n -e "s/^WARNING: Homebrew's output is kept in //p" -e 's/.* Logs: //p' "$tmp/err" || true; } \
+    | while IFS= read -r d; do rm -rf "$d"; done
+}
+
+rc="$(in_stubs preflight)"
+assert_eq "reads every formula, then every cask, with the new build's brew in a scratch prefix" 2 "$(grep -c '^scratch-brew' "$CALLS")"
+assert_contains "formulae first" "args=info --json=v2 --formula jq ripgrep ariga/tap/atlas" "$(cat "$CALLS")"
+assert_contains "then casks" "args=info --json=v2 --cask ledger-wallet temurin@25 theboredteam/boring-notch/boring-notch" "$(cat "$CALLS")"
+assert_eq "never against the real /opt/homebrew prefix" "" "$(grep 'prefix=/opt/homebrew' "$CALLS" || true)"
+assert_contains "without brew's 'proceed?' prompt" "noask=1" "$(cat "$CALLS")"
+assert_contains "tap trust is bundle's job (brew bundle records it later), so a new tap does not read as a failure" \
+  "notrust=1" "$(cat "$CALLS")"
+assert_contains "says what was checked" "==> Homebrew: the new brew reads all of the Brewfile's packages (3 formulae, 3 casks)." "$(cat "$tmp/out")"
+assert_eq "succeeds" 0 "$rc"
+
+export FAKE_BREW_KIND=cask FAKE_BREW_ERR="$ZAP_ERROR"
+rc="$(in_stubs preflight)"
+unset FAKE_BREW_KIND FAKE_BREW_ERR
+remove_kept_dirs
+assert_eq "brew older than the taps (the 2026-11-03 zap error): fails, before anything is activated" 1 "$rc"
+assert_contains "shows the error brew gave" "$ZAP_ERROR" "$(cat "$tmp/err")"
+assert_contains "names the cause" "Cause: Homebrew/brew/7.0.10 (brew-src in flake.nix) is older than the taps it reads" "$(cat "$tmp/err")"
+assert_contains "and the fix, ending in the command to re-run" \
+  "Fix: pin brew-src to the latest Homebrew/brew release, then run: macsetup update" "$(cat "$tmp/err")"
+
+export FAKE_BREW_KIND=formula FAKE_BREW_ERR="Error: homebrew/core/zlib-ng-compat: undefined method 'new' for an instance of Symbol"
+rc="$(in_stubs preflight)"
+unset FAKE_BREW_KIND FAKE_BREW_ERR
+remove_kept_dirs
+assert_eq "formulae count too (the 2026-10-21 error)" 1 "$rc"
+assert_eq "a failing formula check does not hide casks: both are still read" 2 "$(grep -c '^scratch-brew' "$CALLS")"
+
+# Not the pin's fault: the lock cannot fix it, and refusing to update over it
+# would block every update, so it warns and carries on.
+export FAKE_BREW_KIND=cask FAKE_BREW_ERR="Error: Cask 'ledger-wallet' is unavailable: No Cask with this name exists."
+rc="$(in_stubs preflight)"
+unset FAKE_BREW_KIND FAKE_BREW_ERR
+assert_eq "a package missing from the taps is not a too-old brew: warns, does not block" 0 "$rc"
+assert_contains "but says it could not check" "could not finish the Homebrew check" "$(cat "$tmp/err")"
+assert_contains "and shows brew's words" "Cask 'ledger-wallet' is unavailable" "$(cat "$tmp/err")"
+
+rc="$(in_stubs preflight "$tmp/nobrewsys")"
+assert_eq "a configuration without Homebrew: nothing to check" "" "$(cat "$CALLS")$(cat "$tmp/err")"
+assert_eq "...and it succeeds" 0 "$rc"
+
+rc="$(in_stubs preflight "$tmp/nosetupsys")"
+assert_eq "a system whose setup-homebrew cannot be found: skips instead of blocking" 0 "$rc"
+assert_contains "and says it skipped" "skipping the Homebrew check" "$(cat "$tmp/err")"
+assert_eq "without running brew" 0 "$(grep -c '^scratch-brew' "$CALLS" || true)"
+
+# ---------------------------------------------------------------------------
 echo "rebuild: order of everything after activation"
 # ---------------------------------------------------------------------------
 mkdir -p "$tmp/repo"
@@ -659,6 +830,68 @@ assert_eq "one approval up front; App Store + gc use it; it is revoked; Homebrew
   "$(grep -E '^(sudo|mas|brew) ' "$CALLS" | cut -d' ' -f1-2)"
 assert_eq "rebuild succeeds" 0 "$rc"
 assert_eq "and says so last" "==> Rebuild complete." "$(tail -n1 "$tmp/out")"
+
+# ---------------------------------------------------------------------------
+echo "rebuild / update: Homebrew preflight before activation"
+# ---------------------------------------------------------------------------
+# darwin-rebuild builds and activates in one go, so both commands build the
+# system first (cached, so the switch does not build it twice) and let the new
+# brew read the Brewfile before anything is activated.
+cat > "$stubs/gh" <<'STUB'
+#!/bin/bash
+exit 1
+STUB
+chmod +x "$stubs/gh"
+export NIX_BUILD_RESULT="$tmp/hbsys"
+# The EXIT trap macsetup installs is not inherited by in_stubs' subshell, and
+# an early exit would leave sudo_start's keep-alive loop running.
+update_traced() { trap sudo_stop EXIT; cmd_update "$@"; }
+
+export FAKE_BREW_KIND=cask FAKE_BREW_ERR="$ZAP_ERROR"
+rc="$(in_stubs cmd_rebuild)"
+unset FAKE_BREW_KIND FAKE_BREW_ERR
+remove_kept_dirs
+assert_eq "rebuild: a brew too old for the taps stops it" 1 "$rc"
+assert_eq "rebuild: before sudo is asked for and before anything is activated" "" \
+  "$(grep -E '^(sudo|darwin-rebuild|mas|brew) ' "$CALLS" || true)"
+assert_contains "rebuild: says nothing was changed" "nothing was changed on this Mac" "$(cat "$tmp/err")"
+assert_contains "rebuild: and what to fix" "Fix: pin brew-src to the latest Homebrew/brew release, then run: macsetup rebuild" "$(cat "$tmp/err")"
+
+outdated_state
+rc="$(in_stubs cmd_rebuild)"
+assert_eq "rebuild: when brew can read everything, the check comes first and then the switch" \
+  $'scratch-brew\nscratch-brew\ndarwin-rebuild' "$(grep -E '^(scratch-brew|darwin-rebuild)' "$CALLS" | cut -d' ' -f1)"
+assert_eq "rebuild: succeeds" 0 "$rc"
+
+mkdir -p "$tmp/uprepo"
+echo '{"nodes":{"nixpkgs":{"locked":{"rev":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}}}' > "$tmp/uprepo/lock.old"
+echo '{"nodes":{"nixpkgs":{"locked":{"rev":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}}' > "$tmp/uprepo/lock.new"
+# shellcheck disable=SC2034
+REPO_ROOT="$tmp/uprepo"
+export NIX_UPDATE_LOCK="$tmp/uprepo/lock.new"
+
+cp "$tmp/uprepo/lock.old" "$tmp/uprepo/flake.lock"
+export FAKE_BREW_KIND=cask FAKE_BREW_ERR="$ZAP_ERROR"
+rc="$(in_stubs update_traced)"
+unset FAKE_BREW_KIND FAKE_BREW_ERR
+remove_kept_dirs
+assert_eq "update: a brew too old for the new taps stops it" 1 "$rc"
+assert_eq "update: the previous flake.lock is back" "$(cat "$tmp/uprepo/lock.old")" "$(cat "$tmp/uprepo/flake.lock")"
+assert_eq "update: nothing was activated, upgraded or updated" "" \
+  "$(grep -E '^(darwin-rebuild|sudo script|mas |brew )' "$CALLS" || true)"
+assert_contains "update: names the cause" "Cause: the pinned Homebrew (brew-src in flake.nix) is older than the taps it reads" "$(cat "$tmp/err")"
+assert_contains "update: and what to do, ending in the command to re-run" \
+  "Fix: pin brew-src to the latest Homebrew/brew release, then run: macsetup update" "$(cat "$tmp/err")"
+assert_contains "update: and that the lock went back" "flake.lock restored to the previous pins" "$(cat "$tmp/err")"
+
+cp "$tmp/uprepo/lock.old" "$tmp/uprepo/flake.lock"
+outdated_state
+rc="$(in_stubs update_traced)"
+assert_eq "update: when brew can read everything, the check comes after the build and before the switch" \
+  $'scratch-brew\nscratch-brew\ndarwin-rebuild' "$(grep -E '^(scratch-brew|darwin-rebuild)' "$CALLS" | cut -d' ' -f1)"
+assert_eq "update: the new pins stay" "$(cat "$tmp/uprepo/lock.new")" "$(cat "$tmp/uprepo/flake.lock")"
+assert_eq "update: succeeds" 0 "$rc"
+unset NIX_BUILD_RESULT NIX_UPDATE_LOCK
 
 # ---------------------------------------------------------------------------
 echo
