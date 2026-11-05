@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 let
   # YouTube Music Desktop App comes from nixpkgs because homebrew-cask disabled
   # its cask (2026-09-01, fails Gatekeeper, stuck at 2.0.11). defaults.nix has
@@ -55,6 +55,13 @@ let
   '';
 in
 {
+  # Unfree packages, allowed by name only. Applies to Home Manager too
+  # (useGlobalPkgs). vault-bin: HashiCorp Vault is BSL 1.1, so homebrew-core
+  # dropped it; vault-bin repackages HashiCorp's release binary (no local Go
+  # build, unlike nixpkgs' unfree `vault`, which Hydra never caches).
+  nixpkgs.config.allowUnfreePredicate = pkg:
+    builtins.elem (lib.getName pkg) [ "vault-bin" ];
+
   # Central list for system-level packages.
   # Add packages here rather than creating per-tool modules.
   # Populated in Phase 2.

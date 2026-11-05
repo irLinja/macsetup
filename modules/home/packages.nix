@@ -23,6 +23,7 @@
 
     # -- Security --
     osv-scanner       # Google OSV vulnerability scanner for dependencies/lockfiles
+    vault-bin         # HashiCorp Vault CLI (official binary; unfree, allowed in modules/darwin/packages.nix)
 
     # -- Databases --
     postgresql        # PostgreSQL client (psql, pg_dump) + server binaries
